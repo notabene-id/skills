@@ -1,6 +1,6 @@
 # Travel Rule API Guide
 
-This guide covers the essential API endpoints for Travel Rule compliance using Notabene Transact V2. It focuses on the strictly required APIs for creating outgoing transfers, handling incoming transfers, and managing the authorization lifecycle.
+This guide covers the essential API endpoints for Travel Rule compliance using the Notabene **v2** Transact API (`https://api.eu1.notabene.id`, paths under `/entities/{entityDID}/...`). It focuses on the strictly required APIs for creating outgoing transfers, handling incoming transfers, and managing the authorization lifecycle.
 
 For the full API reference, see [devx.notabene.id/reference](https://devx.notabene.id/reference).
 
@@ -102,14 +102,12 @@ All Notabene webhooks use the same envelope format:
 
 ```json
 {
-  "message": "flow.payout.created",
+  "message": "notification.transferStatusChanged",
   "payload": {
     "id": "423ae44a-...",
-    "for": "did:web:notabene.id:pg",
-    "initiatedBy": "did:web:pia-payments.com",
-    "amount": "1300",
-    "currency": "USD",
-    ...
+    "for": "did:web:your-domain.com",
+    "fromStatus": "PENDING",
+    "toStatus": "AUTHORIZED"
   },
   "version": "1.0.0"
 }
@@ -117,7 +115,7 @@ All Notabene webhooks use the same envelope format:
 
 | Field | Description |
 |---|---|
-| `message` | The event type (e.g., `notification.transferStatusChanged`, `tap.requirePresentationRequested`, `flow.payin.created`) |
+| `message` | The event type (e.g., `notification.transferStatusChanged`, `tap.requirePresentationRequested`) |
 | `payload` | All event-specific data, including the transfer `id` and other fields |
 | `version` | Always `"1.0.0"` |
 

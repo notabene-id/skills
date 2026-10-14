@@ -6,12 +6,12 @@
   },
   "metadata": {
     "description": "Notabene skills for Travel Rule compliance, TAP protocol, and blockchain standards",
-    "version": "1.0.1"
+    "version": "1.1.0"
   },
   "plugins": [
     {
       "name": "notabene-api",
-      "description": "Notabene API integration guide for Travel Rule compliance, Flow pay-ins, and JavaScript SDK",
+      "description": "Notabene Transact (Travel Rule) integration guide for API v1, v2 and v2.1, plus the JavaScript SDK",
       "source": "./",
       "strict": false,
       "skills": ["./notabene-api"]

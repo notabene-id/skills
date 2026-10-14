@@ -8,7 +8,7 @@ Install these skills in your Claude Code project to give your coding agent deep 
 
 | Skill | Description |
 |-------|-------------|
-| [notabene-api](./notabene-api) | Integration guide for the Notabene Travel Rule API, Flow pay-ins API, and JavaScript SDK |
+| [notabene-api](./notabene-api) | Integration guide for Notabene Transact (Travel Rule) across API v1 (legacy), v2 and v2.1 (current platform), plus the JavaScript SDK |
 | [tap-protocol-expert](./tap-protocol-expert) | Deep expertise on the Transaction Authorization Protocol (TAP) and TAIPs |
 | [caip-standards-expert](./caip-standards-expert) | Expert on Chain Agnostic Improvement Proposals (CAIPs) and the CASA namespace registry |
 
