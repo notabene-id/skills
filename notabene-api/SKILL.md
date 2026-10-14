@@ -34,9 +34,10 @@ Infer it from the codebase, config or credentials before asking. Ask the user on
 | Base URL | `https://api.notabene.id` (test: `https://api.notabene.dev`) | `https://api.eu1.notabene.id` | `https://sandbox.notabene.id`, `https://eu-a.notabene.id`, `https://us-a.notabene.id` |
 | Path shape | `/tx/create`, `/tx/info`, `/tx/update`, `/tx/list?vaspDID=…` | `/entities/{entityDID}/tx`, `/entities/{entityDID}/relationships` | `/api/v1/transfers`, `/api/v1/customers`, `/api/v1/wallets` |
 | Institution id | `vaspDID` (often `did:ethr:…`) | `entityDID` in every path (`did:web:…`) | None in the path: the token identifies the institution |
-| Transfer statuses | `NEW`, `SENT`, `ACK`, `ACCEPTED`, `DECLINED`, `REJECTED`, `CANCELLED`, `SAVED`, … | `PENDING`, `AUTHORIZED`, `REJECTED`, `SETTLED`, … | `Active`, `ReadyToSettle`, `Settled`, `Rejected`, `Canceled`, … |
-| Webhooks | One payload per transaction change (see v1 guide) | Svix, `{ "message", "payload", "version" }` with `notification.*` / `tap.*` events | Svix, `whsec_` secret set on Integration → Webhooks; `transfer.*.v3` events (`transfer.status_changed.v3`, …) |
+| Transfer statuses | `NEW`, `SENT`, `ACK`, `ACCEPTED`, `DECLINED`, `REJECTED`, `CANCELLED`, `INCOMPLETE`, … | `PENDING`, `AUTHORIZED`, `REJECTED`, `SETTLED`, … | `Active`, `ReadyToSettle`, `Settled`, `Rejected`, `Canceled`, … |
+| Webhooks | Svix, `notification.transactionUpdated` with the transaction under `payload.transaction` | Svix, `{ "message", "payload", "version" }` with `notification.*` / `tap.*` events | Svix, `whsec_` secret set on Integration → Webhooks; `transfer.*.v3` events (`transfer.status_changed.v3`, …) |
 | Body casing | camelCase | camelCase | snake_case (IVMS-101 keys stay camelCase) |
+| Amounts | Integer base units (`"1000000000000000000"` = 1 ETH), asset symbols (`ETH`) | Decimal strings, CAIP-19 assets | Whole-unit decimal strings (`"1.5"`), CAIP-19 assets |
 
 Beware the name clash: v2.1's paths start with `/api/v1`. That is the **v2.1** platform, not the v1 API.
 
@@ -150,12 +151,24 @@ Read [`references/v1/guide-travel-rule-api.md`](references/v1/guide-travel-rule-
 API: transactions keyed by `vaspDID`, created with `POST /tx/create` and driven through `/tx/*` verbs. Treat v1 code as
 maintenance: fix it in v1 terms, and propose migration to v2.1 rather than extending it with new features.
 
+**Originator:** optional `POST /tx/validate/full` → `POST /tx/create` (set a unique `transactionRef`) → `/tx/approve`
+unless an auto-approve rule does it (`NEW` → `SENT`) → wait for the beneficiary institution (`SENT` → `ACK` →
+`ACCEPTED`) → broadcast only after `ACCEPTED` → record the hash with `POST /tx/update`.
+
+**Beneficiary:** register deposit addresses → on `SENT`, `/tx/confirm` the address (→ `ACK`) or `/tx/reject` →
+`/tx/accept` or `/tx/decline` (only from `ACK`; confirming is not accepting). A deposit seen on-chain first is reported
+with `POST /tx/notify`, whose hash is the settlement.
+
+**Gotchas:** amounts are integer base units, not decimals; a 200 from `/tx/update` can be a silent no-op and `/tx/info`
+answers an empty 200 for a transaction you cannot see, so re-read and check; webhooks may omit PII (re-read with
+`/tx/info`). The guide ends with the facts it could not confirm (token URL, audience): check those with Notabene.
+
 ---
 
 ## Rules for every version
 
 - Never broadcast a withdrawal before the version's "safe to send" signal (v2.1 `ReadyToSettle`, v2 `AUTHORIZED`, v1
-  per the v1 guide), then report the transaction hash back.
+  `ACCEPTED`), then report the transaction hash back.
 - Webhooks are delivered at least once and can arrive out of order: make handlers idempotent and re-read the transfer
   from the API rather than trusting the payload alone.
 - Keep the API access token server-side; front ends use per-customer tokens.
