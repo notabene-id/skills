@@ -23,7 +23,7 @@ Infer it from the codebase, config or credentials before asking. Ask only when n
 
 | Signal | v1 (legacy) | v2 | v2.1 (current platform) |
 |---|---|---|---|
-| Base URL | `api.notabene.id` (test `api.notabene.dev`) | `api.eu1.notabene.id` | `sandbox.notabene.id`, `eu-a.notabene.id`, `us-a.notabene.id` |
+| Base URL | `api.notabene.id` | `api.eu1.notabene.id` | `sandbox.notabene.id`, `eu-a.notabene.id`, `us-a.notabene.id` |
 | Paths | `/tx/create`, `/tx/info`, `/tx/update` | `/entities/{entityDID}/tx` | `/api/v1/transfers`, `/api/v1/customers` |
 | Institution id | `vaspDID` (often `did:ethr:…`) | `entityDID` in the path | None: the token identifies it |
 | Statuses | `NEW`, `SENT`, `ACK`, `ACCEPTED`, … | `OUTGOING`/`INCOMING`, `AUTHORIZED`, `SETTLED`, … | `Active`, `ReadyToSettle`, `Settled`, … |
