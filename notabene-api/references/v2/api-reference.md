@@ -1,60 +1,30 @@
-# Notabene API Reference
+# Notabene API Reference (v2)
 
-**OpenAPI**: 3.1.0 | **Version**: 1.0.0 | **Base URL**: `https://api.eu1.notabene.id`
-
----
-
-## Authentication
-
-All endpoints require a Bearer JWT token obtained via OAuth2 client credentials:
-
-```
-POST https://auth.notabene.id/oauth/token
-{
-  "client_id": "<your_client_id>",
-  "client_secret": "<your_client_secret>",
-  "grant_type": "client_credentials",
-  "audience": "https://api.eu1.notabene.id"
-}
-```
-
-All requests must include: `Authorization: Bearer <token>`
-
----
+OpenAPI 3.1.0, version 1.0.0. Auth, base URL and identifier formats:
+[guide-travel-rule-api.md#authentication](guide-travel-rule-api.md#authentication).
 
 ## Table of Contents
 
+- [Conventions](#conventions)
 - [Address Ownership](#address-ownership)
 - [Entities](#entities)
 - [Network](#network)
 - [Relationships](#relationships)
 - [Transfers](#transfers)
+- [TAP Policies](#tap-policies)
 - [Transfer Checks](#transfer-checks)
-- [PII (Personal Identifiable Information)](#pii)
+- [PII](#pii)
 - [Schemas](#schemas)
 
 ---
 
-## Common Path Parameter
+## Conventions
 
-Almost every endpoint includes `{entityDID}` in the path:
-
-| Name | Type | Description | Example |
-|---|---|---|---|
-| `entityDID` | `string (did)` | Your organization's DID | `did:web:vasps.id:jxnl0411:at` |
-
-Pattern: `^did:([a-z0-9]+):((?:(?:[a-zA-Z0-9._-]|(?:%[0-9a-fA-F]{2}))*:)*(?:[a-zA-Z0-9._-]|(?:%[0-9a-fA-F]{2}))+)((;[a-zA-Z0-9_.:%-]+=[a-zA-Z0-9_.:%-]*)*)(/[^#?]*)?([?][^#]*)?(#.*)?$`
-
-## Common Error Response
-
-All error responses (400, 401, 403, 404, 409, 500) share this schema:
-
-```json
-{
-  "error": "string (required)",
-  "details": "string | string[]"
-}
-```
+- `{entityDID}` (in almost every path): your institution's DID, e.g. `did:web:vasps.id:jxnl0411:at`. Pattern:
+  `^did:([a-z0-9]+):((?:(?:[a-zA-Z0-9._-]|(?:%[0-9a-fA-F]{2}))*:)*(?:[a-zA-Z0-9._-]|(?:%[0-9a-fA-F]{2}))+)((;[a-zA-Z0-9_.:%-]+=[a-zA-Z0-9_.:%-]*)*)(/[^#?]*)?([?][^#]*)?(#.*)?$`
+- All errors (400, 401, 403, 404, 409, 500) share `{ "error": "string", "details": "string | string[]" }`.
+- Note the path prefixes: most endpoints use `/entities/...`; address-ownership uses `/entity/...` (singular); PII
+  endpoints use `/transfers/{id}` where transfer endpoints use `/tx/{id}`.
 
 ---
 
@@ -62,63 +32,32 @@ All error responses (400, 401, 403, 404, 409, 500) share this schema:
 
 ### `POST /entity/{entityDID}/address-ownership/discover`
 
-Discover address ownership information for a blockchain address using relationships, hashed address service, and blockchain analytics.
+Discover who owns a blockchain address, using relationships, the hashed-address service and blockchain analytics.
 
-**Request Body** (required, oneOf):
+Body (one of): `{ "caip10": "eip155:1:0x742E..." }` or `{ "asset": "eip155:1/slip44:60", "address": "0x742E..." }`.
 
-Option 1 - CAIP-10:
-```json
-{ "caip10": "eip155:1:0x742E4C6C1c6683A7E1Ba0BA3F8BC43AeDD5b5F4A" }
-```
-
-Option 2 - Asset + Address:
-```json
-{
-  "asset": "eip155:1/slip44:60",
-  "address": "0x742E4C6C1c6683A7E1Ba0BA3F8BC43AeDD5b5F4A"
-}
-```
-
-**Response** `200`:
+Response `200`:
 
 ```json
 {
   "addressOwnership": {
     "address": "eip155:1:0x742d35Cc...",
     "asset": "ETH",
-    "agent": {
-      "did": "did:web:entity1.example.com",
-      "name": "Example Entity 1",
-      "jurisdiction": "US"
-    },
-    "custodian": {
-      "did": "did:web:fireblocks.com",
-      "name": "Fireblocks",
-      "jurisdiction": "US"
-    },
-    "relationship": {
-      "status": "Confirmed",
-      "confirmedAt": "2025-01-15T10:00:00.000Z",
-      "confirmedBy": "did:web:example.com"
-    },
+    "agent": { "did": "did:web:entity1.example.com", "name": "Example Entity 1", "jurisdiction": "US" },
+    "custodian": { "did": "did:web:fireblocks.com", "name": "Fireblocks", "jurisdiction": "US" },
+    "relationship": { "status": "Confirmed", "confirmedAt": "2025-01-15T10:00:00.000Z",
+                      "confirmedBy": "did:web:example.com" },
     "confidence": "CONFIRMED",
     "source": "ADDRESS_BOOK",
     "discoveredAt": "2025-01-15T10:30:00.000Z",
     "responseTimeMs": 125
   },
-  "meta": {
-    "requestId": "550e8400-e29b-41d4-a716-446655440000",
-    "timestamp": "2025-01-15T10:30:00.000Z"
-  }
+  "meta": { "requestId": "550e8400-...", "timestamp": "2025-01-15T10:30:00.000Z" }
 }
 ```
 
-| Field | Type | Description |
-|---|---|---|
-| `confidence` | string | `CONFIRMED`, `UNCONFIRMED`, or `NOT_FOUND` |
-| `source` | string | `ADDRESS_BOOK`, `HASHED_ADDRESS`, `INTEGRATION`, or `UNKNOWN` |
-
-**Errors**: 400, 401, 403, 404 (returns `NOT_FOUND` confidence), 500, 501 (`NOT_IMPLEMENTED`)
+`confidence`: `CONFIRMED`, `UNCONFIRMED`, `NOT_FOUND`. `source`: `ADDRESS_BOOK`, `HASHED_ADDRESS`, `INTEGRATION`,
+`UNKNOWN`. Errors: 404 (returns `NOT_FOUND` confidence), 501 `NOT_IMPLEMENTED`.
 
 ---
 
@@ -126,9 +65,9 @@ Option 2 - Asset + Address:
 
 ### `GET /entities/{entityDID}/public-keys`
 
-Returns the encryption key used in webhooks for the entity. For V1 VASPs (did:ethr DIDs), returns Gateway VASP's keys instead. Key selection priority: keys ending with `#pii` > `#notabene-pii` > type `X25519KeyAgreementKey2019` > first available. Cached with 5-minute TTL.
-
-**Response** `200`:
+Returns the entity's encryption key used in webhooks. For legacy v1 VASPs (`did:ethr`) returns the Gateway VASP's keys
+and adds `gatewayDID`. Key selection: id ending `#pii` > `#notabene-pii` > type `X25519KeyAgreementKey2019` > first
+available. Cached 5 minutes.
 
 ```json
 {
@@ -144,581 +83,230 @@ Returns the encryption key used in webhooks for the entity. For V1 VASPs (did:et
 }
 ```
 
-`gatewayDID` is only present for V1 VASPs.
-
-**Errors**: 404, 500, 503 (DID resolution failed)
+Errors: 404, 500, 503 (DID resolution failed).
 
 ---
 
 ## Network
 
-### `GET /networks/{entityDID}`
-
-Retrieve VASP/entity information including regulatory status, verification status, and protocol support.
-
-**Query Parameters:**
-
-| Name | Type | Description |
+| Method | Path | Purpose |
 |---|---|---|
-| `fields` | string | Comma-separated list of fields to include |
-| `reviewedByVaspDID` | string | Filter by reviewing VASP |
-| `showJurisdictionStatus` | string | Include jurisdiction status |
-| `includeSubsidiaries` | string | Include subsidiary entities |
+| GET | `/networks/{entityDID}` | One VASP/entity: regulatory, verification and protocol-support info |
+| GET | `/network` | List/search entities, paginated |
+| GET | `/networks/gleifSearch` | Look up a Legal Entity Identifier in GLEIF |
 
-**Response** `200`: Returns a VASP entity object with fields including:
+**`GET /networks/{entityDID}`** query: `fields` (comma-separated), `reviewedByVaspDID`, `showJurisdictionStatus`,
+`includeSubsidiaries`. Response fields include `did`, `name`, `legalName`, `website`, `incorporationCountry`,
+`isRegulated`, `regulatoryStatus`, `verificationStatus`, `hasAdmin`, `isNotabeneCustomer`, `subsidiaries[]`,
+`badges[]`, `isSandbox`, plus address, Travel Rule protocol support, compliance phase, etc.
 
-| Field | Type | Description |
-|---|---|---|
-| `did` | string | Entity DID |
-| `name` | string? | Display name |
-| `legalName` | string? | Legal name |
-| `website` | string? | Website URL |
-| `incorporationCountry` | string? | Country of incorporation |
-| `isRegulated` | string? | Regulatory status |
-| `regulatoryStatus` | string? | Detailed regulatory status |
-| `verificationStatus` | string? | Verification status |
-| `hasAdmin` | boolean? | Whether entity has an admin |
-| `isNotabeneCustomer` | boolean? | Whether entity is a Notabene customer |
-| `subsidiaries` | array? | Nested subsidiary entities |
-| `badges` | string[]? | Entity badges |
-| `isSandbox` | boolean? | Whether this is a sandbox entity |
+**`GET /network`** query: `q`, `emailDomain`, `badge` (`super_vasp`, `verified`, `in_network`, `claimed`),
+`jurisdictions`, `page`, `per_page`, `fields`, `listingType` (`exclude_subsidiaries`, `all`, `exclude_gateways`),
+`listing` (`sandbox`, `non-sandbox`). Response: `{ "vasps": [...], "pagination": { "page", "per_page", "total" } }`.
 
-Plus many more fields for address, travel rule protocol support, compliance phase, etc.
-
-**Errors**: 400, 401, 403, 404, 409, 500
-
----
-
-### `GET /network`
-
-List entities in the network with filtering and pagination.
-
-**Query Parameters:**
-
-| Name | Type | Description |
-|---|---|---|
-| `q` | string | Search query |
-| `emailDomain` | string | Filter by email domain |
-| `badge` | string | `super_vasp`, `verified`, `in_network`, `claimed` |
-| `jurisdictions` | string | Filter by jurisdictions |
-| `page` | string | Page number |
-| `per_page` | string | Results per page |
-| `fields` | string | Comma-separated field list |
-| `listingType` | string | `exclude_subsidiaries`, `all`, `exclude_gateways` |
-| `listing` | string | `sandbox` or `non-sandbox` |
-
-**Response** `200`:
-
-```json
-{
-  "vasps": [ { ... } ],
-  "pagination": { "page": 1, "per_page": 25, "total": 100 }
-}
-```
-
----
-
-### `GET /networks/gleifSearch`
-
-Search the GLEIF database for a Legal Entity Identifier (LEI).
-
-**Query Parameters:**
-
-| Name | Required | Type | Validation | Description |
-|---|---|---|---|---|
-| `leiNumber` | yes | string | Pattern: `^([A-Z0-9]){20}$` (exactly 20 alphanumeric chars) | LEI number to search |
-
-**Response** `200`: GLEIF entity data including legal name, jurisdiction, and registration details.
+**`GET /networks/gleifSearch`** query: `leiNumber` (required, `^([A-Z0-9]){20}$`). Returns legal name, jurisdiction
+and registration details.
 
 ---
 
 ## Relationships
 
-### `POST /entities/{entityDID}/relationships`
+Links an address (`from`, usually a `did:pkh`) to an entity (`to`), optionally with the `custodian` that manages it.
 
-Create a new relationship between an address and an entity. Optionally includes an ownership proof.
+| Method | Path | Purpose | Response |
+|---|---|---|---|
+| POST | `/entities/{entityDID}/relationships` | Create a relationship, optionally with proof | `201` `{ "relationship": {...} }` |
+| GET | `/entities/{entityDID}/relationships` | List; query `from`, `to`, `custodian` | `200` `{ "relationships": [...] }` |
+| PATCH | `/entities/{entityDID}/relationships?from=&to=&custodian=` | Confirm (upsert); optional proof body | `201` `{ "success": true }` |
+| DELETE | `/entities/{entityDID}/relationships?from=&to=` | Delete (`from`, `to` required) | `202` `{ "success": true }` |
 
-**Request Body** (required):
-
-```json
-{
-  "from": "did:pkh:eip155:1:0x...",
-  "to": "did:web:counterparty.com",
-  "custodian": "did:web:custodian.com",
-  "proof": { ... }
-}
-```
+POST body:
 
 | Field | Required | Validation | Description |
 |---|---|---|---|
-| `to` | yes | 3–255 chars | DID of the target entity |
-| `from` | no | 3–255 chars | DID of the source (address) |
-| `custodian` | no | 3–255 chars, must match DID pattern | DID of the custodian |
-| `proof` | no | | Ownership proof (see proof types below) |
+| `to` | yes | 3–255 chars | Owning entity DID |
+| `from` | no | 3–255 chars | Address DID |
+| `custodian` | no | 3–255 chars, DID pattern | Custodian (wallet service) DID |
+| `proof` | no | | Ownership proof, one of the types below |
 
-**Proof types** (anyOf):
+Proof types: **signature** — `type` in `eip-191`, `eip-712`, `eip-1271`, `bip-137`, `bip-322`, `xpub`, `tip-191`,
+`ed25519`, `xrp-ed25519`, `xlm-ed25519`, `cip-8`, `siwe`, `siwx`, with `proof` and `attestation`; **screenshot** —
+`url` (URI); **declaration** — `confirmed` (boolean).
 
-1. **Cryptographic signature**: `type` is one of `eip-191`, `eip-712`, `eip-1271`, `bip-137`, `bip-322`, `xpub`, `tip-191`, `ed25519`, `xrp-ed25519`, `xlm-ed25519`, `cip-8`, `siwe`, `siwx`. Requires `proof` and `attestation` fields.
-2. **Screenshot**: `type: "screenshot"`, requires `url` (URI).
-3. **Declaration**: `type: "declaration"`, requires `confirmed` (boolean).
-
-**Response** `201`:
-
-```json
-{
-  "relationship": {
-    "@id": "uuid",
-    "from": "did:pkh:...",
-    "to": "did:web:...",
-    "custodian": null,
-    "status": "UNCONFIRMED",
-    "createdTime": "...",
-    "proofId": "..."
-  }
-}
-```
-
-Status values: `UNCONFIRMED`, `CONFIRMED`, `PROVEN`
-
----
-
-### `GET /entities/{entityDID}/relationships`
-
-List all relationships for an entity.
-
-**Query Parameters:**
-
-| Name | Type | Description |
-|---|---|---|
-| `from` | string (did) | Filter by source DID |
-| `to` | string (did) | Filter by target DID |
-| `custodian` | string (did) | Filter by custodian DID |
-
-**Response** `200`:
+Relationship object: `@id`, `from`, `to`, `custodian`, `status` (`UNCONFIRMED`, `CONFIRMED`, `PROVEN`),
+`createdTime`, `proofId`; list items also carry `confirmedBy` and `proofs[]`:
 
 ```json
-{
-  "relationships": [
-    {
-      "@id": "uuid",
-      "from": "did:pkh:eip155:1:0x...",
-      "to": "did:web:...",
-      "custodian": "did:web:...",
-      "status": "CONFIRMED",
-      "confirmedBy": "did:web:...",
-      "proofs": [
-        {
-          "status": "VERIFIED",
-          "did": "did:pkh:...",
-          "address": "eip155:1:0x742d35Cc...",
-          "type": "eip191",
-          "proof": "0x...",
-          "walletProvider": "MetaMask",
-          "confirmed": true,
-          "createdAt": "2025-01-15T10:00:00.000Z"
-        }
-      ]
-    }
-  ]
-}
+{ "status": "VERIFIED", "did": "did:pkh:...", "address": "eip155:1:0x742d35Cc...", "type": "eip191",
+  "proof": "0x...", "walletProvider": "MetaMask", "confirmed": true, "createdAt": "2025-01-15T10:00:00.000Z" }
 ```
 
-Proof status values: `PENDING`, `CONFIRMED`, `VERIFIED`, `REJECTED`
-Proof types: `screenshot`, `eip191`, `eip712`, `declaration`
-
----
-
-### `PATCH /entities/{entityDID}/relationships`
-
-Confirm a relationship. Creates it if it doesn't exist (upsert). Optionally includes ownership proof.
-
-**Query Parameters**: `from`, `to`, `custodian` (all optional, string DIDs)
-
-**Request Body** (optional): Same proof structure as POST.
-
-**Response** `201`: `{ "success": true }`
-
----
-
-### `DELETE /entities/{entityDID}/relationships`
-
-Delete an existing relationship.
-
-**Query Parameters** (required): `from`, `to`
-
-**Response** `202`: `{ "success": true }`
+Proof `status`: `PENDING`, `CONFIRMED`, `VERIFIED`, `REJECTED`. Proof `type` in list responses: `screenshot`,
+`eip191`, `eip712`, `declaration`.
 
 ---
 
 ## Transfers
 
+| Method | Path | Purpose | Success |
+|---|---|---|---|
+| POST | `/entities/{entityDID}/tx` | Create a transfer | `201` `{ "transfer": Transfer }` |
+| GET | `/entities/{entityDID}/tx` | List, filter, paginate | `200` `{ "data": [], "pagination": { total, limit, offset } }` |
+| GET | `/entities/{entityDID}/tx/{transferId}` | Get one (optionally decrypted) | `200` `{ "transfer": Transfer }` |
+| GET | `/entities/{entityDID}/tx/search` | Search; items carry `matchedColumns` | `200` same shape as list |
+| GET | `/entities/{entityDID}/tx/match` | Match by on-chain settlement data | `200` list + `meta` |
+| POST | `/entities/{entityDID}/tx/{transferId}/authorize` | Authorize | `202` |
+| POST | `/entities/{entityDID}/tx/{transferId}/reject` | Reject | `200` |
+| POST | `/entities/{entityDID}/tx/{transferId}/settle` | Report on-chain settlement | `202` |
+| POST | `/entities/{entityDID}/tx/{transferId}/agents` | Add an agent | `202` |
+| POST | `/entities/{entityDID}/tx/{transferId}/agents/replace` | Replace an agent | `202` |
+
 ### `POST /entities/{entityDID}/tx`
 
-Create a new transfer. This is the entry point for initiating Travel Rule compliance.
+Entry point for Travel Rule compliance. Full examples (hosted, unhosted, unmatched deposit):
+[guide-travel-rule-api.md#1-create-a-transfer](guide-travel-rule-api.md#1-create-a-transfer).
 
-**Request Body** (required):
-
-```json
-{
-  "ref": "a7135b55-0822-4e96-86dc-3c43dfc6c333",
-  "originator": { "@id": "mailto:user@example.com" },
-  "beneficiary": { "@id": "mailto:recipient@example.com" },
-  "asset": "eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-  "amount": "100.00",
-  "agents": [
-    {
-      "@id": "did:web:your-vasp.com",
-      "role": "VASP",
-      "for": "mailto:user@example.com",
-      "policies": [
-        { "@type": "REQUIRE_AUTHORIZATION" }
-      ]
-    },
-    {
-      "@id": "eip155:1:0xSettlementAddress",
-      "role": "SettlementAddress"
-    }
-  ],
-  "settlementId": "0xabc123...",
-  "transactionValue": { "amount": "100.00", "currency": "USD" },
-  "blockchainAnalyticsAlias": "My Wallet",
-  "memoTag": "12345"
-}
-```
-
-| Field | Required | Type | Validation | Description |
-|---|---|---|---|---|
-| `ref` | yes | string | 1–64 chars, pattern: `^[a-zA-Z0-9_-]{1,64}$` | Unique reference for idempotency |
-| `originator` | yes | object | `@id`: 3–255 chars, must be a valid DID | `{ "@id": "did:..." }` |
-| `beneficiary` | yes | object | `@id`: 3–255 chars, must be a valid DID | `{ "@id": "did:..." }` |
-| `asset` | yes | string | CAIP-19 pattern or 2–20 char abbreviation (e.g. `BTC`) | Asset identifier |
-| `amount` | yes | string | Pattern: `^\d+(\.\d+)?$` (numeric, no negatives) | Decimal amount |
-| `agents` | yes | array | minItems: 1 | Array of agents (see Agent schema) |
-| `settlementId` | no | string | maxLength: 255. CAIP-220 format recommended | On-chain transaction hash |
-| `transactionValue` | no | object | `amount`: `^\d+(\.\d+)?$`; `currency`: 1–3 chars | `{ "amount": "...", "currency": "..." }` or null |
-| `blockchainAnalyticsAlias` | no | string | | Alias for blockchain analytics |
-| `memoTag` | no | string | 1–28 chars, pattern: `^[ -~]+$` (printable ASCII) | Memo/destination tag |
-
-**Agent object:**
-
-| Field | Required | Type | Description |
+| Field | Required | Validation | Description |
 |---|---|---|---|
-| `@id` | yes | string | Agent DID or address |
-| `role` | no | string | `VASP`, `Custodian`, `SettlementAddress`, `SourceAddress`, `Gateway`, `Unknown` (default) |
-| `for` | no | string | DID of party this agent acts for |
-| `policies` | no | array | `[{ "@type": "REQUIRE_AUTHORIZATION" | "REQUIRE_PRESENTATION" | "REQUIRE_RELATIONSHIP_CONFIRMATION" }]` |
-| `memoTag` | no | string | Memo/destination tag for address agents |
+| `ref` | yes | `^[a-zA-Z0-9_-]{1,64}$` | Idempotency key; duplicate → `409` |
+| `originator` | yes | `@id` 3–255 chars, valid DID | `{ "@id": "..." }` |
+| `beneficiary` | yes | `@id` 3–255 chars, valid DID | `{ "@id": "..." }` |
+| `asset` | yes | CAIP-19 or 2–20 char abbreviation | e.g. `BTC` |
+| `amount` | yes | `^\d+(\.\d+)?$` (no negatives) | Decimal string |
+| `agents` | yes | min 1 | Agent objects (below) |
+| `settlementId` | no | max 255, CAIP-220 recommended | On-chain tx hash |
+| `transactionValue` | no | `amount` `^\d+(\.\d+)?$`; `currency` 1–3 chars | `{ amount, currency }` or null |
+| `blockchainAnalyticsAlias` | no | | Alias for blockchain analytics |
+| `memoTag` | no | 1–28 chars, `^[ -~]+$` | Memo/destination tag |
 
-**Response** `201`: `{ "transfer": <Transfer object> }` (see [Transfer schema](#transfer))
+Agent object:
 
-**Errors**: 400, 401, 403, 404, 409 (duplicate ref), 500
+| Field | Required | Description |
+|---|---|---|
+| `@id` | yes | Agent DID or address |
+| `role` | no | `VASP`, `Custodian`, `SettlementAddress`, `SourceAddress`, `Gateway`, `Unknown` (default) |
+| `for` | no | DID of the party this agent acts for |
+| `policies` | no | `[{ "@type": "REQUIRE_AUTHORIZATION" \| "REQUIRE_PRESENTATION" \| "REQUIRE_RELATIONSHIP_CONFIRMATION" }]` |
+| `memoTag` | no | Memo/destination tag for address agents |
 
----
+### `GET /entities/{entityDID}/tx` and `/tx/search`
 
-### `GET /entities/{entityDID}/tx`
+| Query | Type | Notes |
+|---|---|---|
+| `limit` | integer | default 25, 1–100 |
+| `offset` | integer | default 0 |
+| `agent`, `status`, `asset`, `party`, `refs` | array | Filters |
+| `created_before`, `created_after` | string | ISO 8601 |
+| `direction` | string | `INCOMING`, `OUTGOING` |
+| `search_term` | string | Full-text |
+| `fields` | string | Comma-separated |
+| `sort_by` / `sort_order` | string | `asc`, `desc` |
+| `action_required` | boolean | Transfers waiting on you |
+| `request_for_information` | boolean | Pending info requests |
 
-List transfers for an entity with filtering and pagination.
-
-**Query Parameters:**
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `limit` | integer | 25 | Min: 1, Max: 100 |
-| `offset` | integer | 0 | Min: 0 |
-| `agent` | array | - | Filter by agent DIDs |
-| `status` | array | - | Filter by transfer status |
-| `asset` | array | - | Filter by asset identifier |
-| `party` | array | - | Filter by party identifiers |
-| `refs` | array | - | Filter by reference identifiers |
-| `created_before` | string | - | ISO 8601 date-time |
-| `created_after` | string | - | ISO 8601 date-time |
-| `direction` | string | - | `INCOMING` or `OUTGOING` |
-| `search_term` | string | - | Full-text search |
-| `fields` | string | - | Comma-separated fields to include |
-| `sort_by` | string | - | Field to sort by |
-| `sort_order` | string | - | `asc` or `desc` |
-| `action_required` | boolean | - | Filter to transfers requiring action |
-| `request_for_information` | boolean | - | Filter to transfers with pending info requests |
-
-**Response** `200`:
-
-```json
-{
-  "data": [ { ... } ],
-  "pagination": { "total": 100, "limit": 25, "offset": 0 }
-}
-```
-
----
+`/tx/search` takes the same parameters and returns `SearchTransfer` items with `matchedColumns`
+(e.g. `["ref", "settlementId"]`).
 
 ### `GET /entities/{entityDID}/tx/{transferId}`
 
-Get a specific transfer with optional PII decryption and timeline.
-
-**Path Parameters:** `transferId` (uuid)
-
-**Query Parameters:**
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `decrypt` | string | `"false"` | `"true"` or `"false"` - decrypt PII data |
-| `sanitize` | string | `"true"` | `"true"` or `"false"` - sanitize sensitive data |
-| `include_timeline` | string | `"false"` | Include event timeline |
-| `include_integration_results` | string | `"false"` | Include integration results |
-| `include_replaced` | boolean | `false` | Include replaced agents in the response |
-
-**Response** `200`: `{ "transfer": <Transfer object> }`
-
----
-
-### `GET /entities/{entityDID}/tx/search`
-
-Search transfers with filters. Same query parameters as `GET /tx`. Returns `SearchTransfer` objects with `matchedColumns` field.
-
-**Response** `200`:
-
-```json
-{
-  "data": [
-    {
-      "id": "...",
-      "ref": "...",
-      "status": "...",
-      "matchedColumns": ["ref", "settlementId"],
-      ...
-    }
-  ],
-  "pagination": { "total": 10, "limit": 25, "offset": 0 }
-}
-```
-
----
+| Query | Default | Description |
+|---|---|---|
+| `decrypt` | `"false"` | `"true"` decrypts PII |
+| `sanitize` | `"true"` | Sanitize sensitive data |
+| `include_timeline` | `"false"` | Include event timeline |
+| `include_integration_results` | `"false"` | Include integration results |
+| `include_replaced` | `false` | Include replaced agents |
 
 ### `GET /entities/{entityDID}/tx/match`
 
-Match transfers by settlement identifiers (e.g., on-chain transaction hash).
-
-**Query Parameters:**
-
-| Name | Required | Type | Description |
-|---|---|---|---|
-| `settlement_id` | yes | string | Settlement identifier (tx hash) |
-| `settlement_address` | yes | string | Destination address |
-| `settlement_id_index` | no | string | Vout/log index (strict match first, dropped if broadened) |
-| `memo_tag` | no | string | Memo tag for matching |
-| `limit` | no | integer | Default: 25, Max: 100 |
-| `offset` | no | integer | Default: 0 |
-| `direction` | no | string | `INCOMING` or `OUTGOING` |
-
-**Response** `200`:
-
-```json
-{
-  "data": [ { ... } ],
-  "pagination": { "total": 1, "limit": 25, "offset": 0 },
-  "meta": {
-    "match_strategy": "strict",
-    "broadened_candidates": 0
-  }
-}
-```
-
-`match_strategy`: `strict`, `broadened`, or `none`
-
----
+Query: `settlement_id` (required, tx hash), `settlement_address` (required, destination), `settlement_id_index`
+(vout/log index; matched strictly first, dropped if broadened), `memo_tag`, `limit` (25, max 100), `offset`,
+`direction`. Response adds `meta: { "match_strategy": "strict" | "broadened" | "none", "broadened_candidates": 0 }`.
 
 ### `POST /entities/{entityDID}/tx/{transferId}/authorize`
 
-Authorize a transfer to proceed.
+Query: `force` (authorize even if checks fail), `ignoreFlags` (comma-separated flags to ignore). Body (both optional):
 
-**Query Parameters:**
-
-| Name | Type | Description |
+| Field | Validation | Description |
 |---|---|---|
-| `force` | string | Force authorization even if checks fail |
-| `ignoreFlags` | string | Comma-separated list of flags to ignore |
+| `settlementAddress` | `^[a-z0-9-]+:[a-z0-9-]+:.+$` (CAIP-10) | Settlement address |
+| `memoTag` | 1–28 printable ASCII | Memo/destination tag |
 
-**Request Body** (required):
-
-```json
-{
-  "settlementAddress": "eip155:1:0x...",
-  "memoTag": "12345"
-}
-```
-
-| Field | Required | Validation | Description |
-|---|---|---|---|
-| `settlementAddress` | no | Pattern: `^[a-z0-9-]+:[a-z0-9-]+:.+$` (CAIP-10) | Settlement address |
-| `memoTag` | no | 1–28 chars, printable ASCII | Memo/destination tag |
-
-**Response** `202`: `{ "message": "Transfer authorization accepted" }`
-
----
+Response `202` `{ "message": "Transfer authorization accepted" }`. Wallet services authorize with `{}`
+([wallet-service-guide.md](wallet-service-guide.md#common-pitfalls)).
 
 ### `POST /entities/{entityDID}/tx/{transferId}/reject`
 
-Reject a transfer with a reason.
-
-**Request Body** (required):
-
-```json
-{
-  "reason": "COUNTERPARTY_RISK",
-  "comment": "Optional comment (required when reason is OTHER)"
-}
-```
-
-| Field | Required | Validation | Description |
-|---|---|---|---|
-| `reason` | yes | One of the enum values below | Rejection reason |
-| `comment` | conditional | maxLength: 500. **Required** when reason is `OTHER` | Additional details |
-
-**Reason values**: `COUNTERPARTY_RISK`, `COUNTERPARTY_DUE_DILIGENCE`, `BLOCKCHAIN_RISK_SCORE`, `SANCTION_SCREENING`, `ASSET_TYPE`, `SUSPICIOUS_TRANSACTION`, `COUNTERPARTY_POLICIES`, `COUNTERPARTY_REJECTED`, `COUNTERPARTY_NO_RESPONSE`, `CANCELED_BY_INITIATOR`, `REMOVED_FROM_TRANSFER`, `TRANSFER_PARTICIPANT`, `SOURCE_ADDRESS`, `BENEFICIARY_ADDRESS`, `BENEFICIARY_NOT_FOUND`, `ORIGINATOR_REJECT_OUTGOING`, `BENEFICIARY_REJECT_INCOMING`, `COMPLIANCE_POLICIES`, `OTHER`
-
-**Response** `200`: `{ "message": "Transfer rejected successfully" }`
-
----
+Body `{ "reason": "...", "comment": "..." }`; `comment` max 500, required when `reason` is `OTHER`. Reason enum:
+[guide-travel-rule-api.md#3-reject-a-transfer](guide-travel-rule-api.md#3-reject-a-transfer). Response `200`
+`{ "message": "Transfer rejected successfully" }`.
 
 ### `POST /entities/{entityDID}/tx/{transferId}/settle`
 
-Settle a transfer by providing on-chain transaction details.
-
-**Request Body** (required):
-
-```json
-{
-  "settlementId": "0xabc123...",
-  "settlementIdIndex": "0",
-  "revertSettlementId": "0xdef456..."
-}
-```
-
-All fields are optional.
-
-**Response** `202`: `{ "message": "Transfer settlement accepted" }`
-
----
+Body (all optional): `settlementId` (tx hash), `settlementIdIndex` (e.g. `"0"`), `revertSettlementId`. Response `202`
+`{ "message": "Transfer settlement accepted" }`.
 
 ### `POST /entities/{entityDID}/tx/{transferId}/agents`
 
-Add an agent to an existing transfer.
-
-**Request Body** (required):
-
-```json
-{
-  "agent": {
-    "@id": "did:web:new-agent.com",
-    "role": "VASP",
-    "for": "mailto:user@example.com",
-    "policies": [{ "@type": "REQUIRE_AUTHORIZATION" }],
-    "memoTag": "12345"
-  }
-}
-```
-
-**Response** `202`: `{ "message": "Agent addition accepted" }`
-
----
+Body `{ "agent": { "@id", "role", "for", "policies", "memoTag" } }` (agent object above). Response `202`.
 
 ### `POST /entities/{entityDID}/tx/{transferId}/agents/replace`
 
-Replace an existing agent with a new agent. Caller must be the transfer initiator, a gateway, or have a relationship with the agent being replaced.
-
-**Request Body** (required):
+Caller must be the transfer initiator, a gateway, or have a relationship with the agent being replaced.
 
 ```json
-{
-  "original": "did:web:old-agent.com",
-  "replacement": {
-    "@id": "did:web:new-agent.com",
-    "role": "VASP",
-    "for": "mailto:user@example.com"
-  }
-}
+{ "original": "did:web:old-agent.com",
+  "replacement": { "@id": "did:web:new-agent.com", "role": "VASP", "for": "mailto:user@example.com" } }
 ```
 
-**Response** `202`: `{ "message": "Agent replacement accepted" }`
+Response `202`.
 
 ---
 
-### TAP Policies
+## TAP Policies
 
-#### `GET /entities/{entityDID}/transfers/{transferId}/tap-policies`
-
-List TAP policies for a transfer.
-
-**Response** `200`:
+| Method | Path | Response |
+|---|---|---|
+| GET | `/entities/{entityDID}/transfers/{transferId}/tap-policies` | `{ "policies": [TapPolicy] }` |
+| GET | `/entities/{entityDID}/transfers/{transferId}/tap-policies/{policyId}` | `{ "policy": TapPolicy }` |
 
 ```json
 {
-  "policies": [
-    {
-      "@id": "cb16e827-a11b-4b59-8fc0-9c36459b9447",
-      "@type": "REQUIRE_PRESENTATION",
-      "status": "PENDING",
-      "from": "did:web:counterparty.com",
-      "for": "did:web:your-vasp.com",
-      "about": "originator",
-      "presentationDefinition": "https://...",
-      "encryptionKey": {
-        "id": "did:web:counterparty.com#pii",
-        "type": "EcdsaSecp256r1VerificationKey2019",
-        "controller": "did:web:counterparty.com",
-        "publicKeyHex": "04a1b2..."
-      },
-      "createdAt": "2025-12-01T12:24:52.537Z"
-    }
-  ]
+  "@id": "cb16e827-a11b-4b59-8fc0-9c36459b9447",
+  "@type": "REQUIRE_PRESENTATION",
+  "status": "PENDING",
+  "from": "did:web:counterparty.com",
+  "for": "did:web:your-vasp.com",
+  "about": "originator",
+  "presentationDefinition": "https://...",
+  "encryptionKey": { "id": "did:web:counterparty.com#pii", "type": "EcdsaSecp256r1VerificationKey2019",
+                     "controller": "did:web:counterparty.com", "publicKeyHex": "04a1b2..." },
+  "createdAt": "2025-12-01T12:24:52.537Z"
 }
 ```
 
-#### `GET /entities/{entityDID}/transfers/{transferId}/tap-policies/{policyId}`
-
-Get a specific TAP policy. **Response** `200`: `{ "policy": <TapPolicy> }`
-
-**TapPolicy `@type` values**: `REQUIRE_AUTHORIZATION`, `REQUIRE_PRESENTATION`, `REQUIRE_RELATIONSHIP_CONFIRMATION`
-
-**TapPolicy `status` values**: `COMPLETED`, `INCOMPLETE`, `PENDING`
+`@type`: `REQUIRE_AUTHORIZATION`, `REQUIRE_PRESENTATION`, `REQUIRE_RELATIONSHIP_CONFIRMATION`. `status`:
+`COMPLETED`, `INCOMPLETE`, `PENDING`.
 
 ---
 
 ## Transfer Checks
 
-### `POST /entities/{entityDID}/tx/{transferId}/checks/beneficiary-name-matching`
+| Method | Path | Marks complete |
+|---|---|---|
+| POST | `/entities/{entityDID}/tx/{transferId}/checks/beneficiary-name-matching` | Beneficiary name matches your KYC |
+| POST | `/entities/{entityDID}/tx/{transferId}/checks/internal-checks` | Operational checks on the PII done |
 
-Mark beneficiary name matching check as complete after verifying the beneficiary name matches your KYC records.
-
-**Request Body**: None
-
-**Response** `200`:
+No body. Response `200`:
 
 ```json
-{
-  "id": "uuid",
-  "transferId": "uuid",
-  "entityDid": "did:web:...",
-  "type": "REQUIRE_BENEFICIARY_NAME_MATCHING",
-  "status": "COMPLETE",
-  "policyData": {
-    "confirmedBy": "did:web:...",
-    "confirmedAt": "2025-01-15T10:00:00.000Z"
-  },
-  "createdAt": "...",
-  "updatedAt": "..."
-}
+{ "id": "uuid", "transferId": "uuid", "entityDid": "did:web:...",
+  "type": "REQUIRE_BENEFICIARY_NAME_MATCHING", "status": "COMPLETE",
+  "policyData": { "confirmedBy": "did:web:...", "confirmedAt": "2025-01-15T10:00:00.000Z" },
+  "createdAt": "...", "updatedAt": "..." }
 ```
 
----
-
-### `POST /entities/{entityDID}/tx/{transferId}/checks/internal-checks`
-
-Mark internal checks as complete after completing operational checks on PII/Travel Rule information.
-
-**Request Body**: None
-
-**Response** `200`: Same schema as beneficiary-name-matching with `type: "REQUIRE_INTERNAL_CHECKS"`.
+`type` is `REQUIRE_INTERNAL_CHECKS` for internal checks.
 
 ---
 
@@ -726,75 +314,15 @@ Mark internal checks as complete after completing operational checks on PII/Trav
 
 ### `POST /entities/{entityDID}/transfers/{transferId}/append`
 
-Append PII (IVMS101 data) to a transfer for Travel Rule compliance.
-
-**Request Body** (required):
-
-```json
-{
-  "originator": { "@id": "mailto:originator@notabene.id" },
-  "beneficiary": { "@id": "mailto:beneficiary@notabene.id" },
-  "ivms101": {
-    "originator": {
-      "originatorPerson": [{
-        "naturalPerson": {
-          "name": {
-            "nameIdentifier": [{
-              "primaryIdentifier": "Doe",
-              "secondaryIdentifier": "John",
-              "naturalPersonNameIdentifierType": "LEGL"
-            }]
-          },
-          "dateAndPlaceOfBirth": {
-            "dateOfBirth": "1980-01-01",
-            "placeOfBirth": "Anytown, US"
-          },
-          "geographicAddress": [{
-            "addressType": "HOME",
-            "addressLine": ["123 Main Street"],
-            "townName": "Anytown",
-            "country": "US",
-            "postCode": "1234"
-          }]
-        }
-      }],
-      "accountNumber": "originator-account"
-    },
-    "beneficiary": {
-      "beneficiaryPerson": [{
-        "naturalPerson": {
-          "name": {
-            "nameIdentifier": [{
-              "primaryIdentifier": "Smith",
-              "secondaryIdentifier": "Jane",
-              "naturalPersonNameIdentifierType": "LEGL"
-            }]
-          }
-        }
-      }],
-      "accountNumber": "beneficiary-account"
-    }
-  }
-}
-```
-
-See [IVMS101 schema](#ivms101) for full structure.
-
-**Response** `202`: `{ "message": "Transfer appended successfully with encrypted PII" }`
-
----
+Append IVMS101 PII (Notabene encrypts it). Body: `originator` / `beneficiary` (`{ "@id" }`) and `ivms101` with
+`originator.originatorPerson[]` + `accountNumber`, and/or `beneficiary.beneficiaryPerson[]` + `accountNumber`
+([IVMS101](#ivms101)). Example: [guide-travel-rule-api.md#2-provide-pii-when-requested](guide-travel-rule-api.md#2-provide-pii-when-requested).
+Response `202` `{ "message": "Transfer appended successfully with encrypted PII" }`.
 
 ### `POST /entities/{entityDID}/transfers/{transferId}/policies/{policyId}/presentation`
 
-Present PII data to counterparties for a specific policy.
-
-**Path Parameters**: `transferId`, `policyId`
-
-**Query Parameters**: `skipValidation` (boolean, default: false)
-
-**Request Body** (required): `{ "ivms101": <IVMS101 object> }`
-
-**Response** `202`: `{ "message": "Presentation accepted and processing" }`
+Present PII for one policy. Query `skipValidation` (boolean, default false). Body `{ "ivms101": <IVMS101> }`. Response
+`202` `{ "message": "Presentation accepted and processing" }`.
 
 ---
 
@@ -802,49 +330,37 @@ Present PII data to counterparties for a specific policy.
 
 ### Transfer
 
-The core transfer object returned by create, get, and list endpoints.
-
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `@id` | string | yes | Unique transfer identifier |
+| `@id` | string | yes | Transfer identifier |
 | `id` | string | no | Alternate ID |
-| `status` | string | yes | See status values below |
-| `asset` | string? | no | CAIP-19 asset identifier |
+| `status` | string | yes | [Transfer statuses](guide-travel-rule-api.md#transfer-statuses) |
+| `asset` | string? | no | CAIP-19 |
 | `initiator` | string | yes | DID of the initiating entity |
-| `agents` | array | yes | Array of transfer agents |
-| `amount` | string? | no | Transfer amount |
-| `originator` | object? | no | `{ "@id": "...", "originatorPerson": [...] }` |
-| `beneficiary` | object? | no | `{ "@id": "...", "beneficiaryPerson": [...] }` |
+| `agents` | array | yes | Transfer agents |
+| `amount` | string? | no | Amount |
+| `originator` | object? | no | `{ "@id", "originatorPerson": [...] }` |
+| `beneficiary` | object? | no | `{ "@id", "beneficiaryPerson": [...] }` |
 | `ref` | string? | no | Client reference |
-| `direction` | string? | no | `INCOMING` or `OUTGOING` |
-| `transactionType` | string? | no | `TRANSFER`, `PAYOUT`, or `PAYIN` |
-| `settlementAddress` | string? | no | Settlement blockchain address |
-| `settlementId` | string? | no | On-chain transaction hash |
+| `direction` | string? | no | `INCOMING`, `OUTGOING` |
+| `transactionType` | string? | no | `TRANSFER`, `PAYOUT`, `PAYIN` |
+| `settlementAddress` | string? | no | Settlement address |
+| `settlementId` | string? | no | On-chain tx hash |
 | `settlementIdIndex` | string? | no | Vout/log index |
-| `isTravelRule` | boolean? | no | Whether travel rule applies |
+| `isTravelRule` | boolean? | no | Whether the Travel Rule applies |
 | `memoTag` | string? | no | Memo/destination tag |
-| `createdTime` | string? | no | Creation timestamp |
-| `authorizedTime` | string? | no | When authorized |
-| `rejectedTime` | string? | no | When rejected |
-| `settledTime` | string? | no | When settled |
-| `revertedTime` | string? | no | When reverted |
-| `expiresTime` | string? | no | Expiration time |
-| `amounts` | array? | no | Detailed amounts with currency conversions |
+| `createdTime`, `authorizedTime`, `rejectedTime`, `settledTime`, `revertedTime`, `expiresTime` | string? | no | Timestamps |
+| `amounts` | array? | no | Amounts with currency conversions |
 | `flags` | array? | no | Transfer flags |
 | `log` | array? | no | Activity log |
 | `policyEvaluations` | array? | no | Policy evaluation results |
 
-**Transfer status values**: `OUTGOING`, `INCOMING`, `REJECTED`, `AUTHORIZED`, `FLAGGED`, `SETTLED`, `FLAGGED-SETTLEMENT`, `REVERTED`, `REVERT-AUTHORIZED`, `REVERT-REJECTED`, `REVERT-FLAGGED`, `FROZEN`, `CLEARED`, `REVERT-REQUESTED`
-
-**Agent status values**: `PROCESSING`, `AUTHORIZED`, `REJECTED`, `SETTLED`, `FAILED`, `REPLACED`
-
-**Agent role values**: `VASP`, `Custodian`, `SettlementAddress`, `SourceAddress`, `Gateway`, `Unknown`
-
----
+Agent status values: `PROCESSING`, `AUTHORIZED`, `REJECTED`, `SETTLED`, `FAILED`, `REPLACED`. Agent roles: `VASP`,
+`Custodian`, `SettlementAddress`, `SourceAddress`, `Gateway`, `Unknown`.
 
 ### IVMS101
 
-IVMS 101.2023 compliant data structure for originator and beneficiary PII.
+IVMS 101.2023 structure for originator and beneficiary PII.
 
 ```
 ivms101:

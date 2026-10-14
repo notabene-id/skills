@@ -1,6 +1,6 @@
 # Notabene JavaScript SDK Guide
 
-The Notabene JavaScript SDK (`@notabene/javascript-sdk`) provides embeddable UI components — collectively called **SafeConnect** — that handle Travel Rule data collection directly in your frontend. The components are served as a SvelteKit application hosted at `embedded.notabene.id` and rendered via an iframe that the SDK manages. You configure and communicate with them through the SDK's JavaScript API.
+The Notabene JavaScript SDK (`@notabene/javascript-sdk`) provides embeddable UI components — collectively called **SafeConnect** — that handle Travel Rule data collection in your frontend. They are rendered in an iframe pointing to `https://embedded.notabene.id`; the SDK handles iframe setup, configuration and two-way communication, so you never touch the iframe directly.
 
 Full docs: [devx.notabene.id/docs/components-overview](https://devx.notabene.id/docs/components-overview)
 npm: [@notabene/javascript-sdk](https://www.npmjs.com/package/@notabene/javascript-sdk)
@@ -17,26 +17,18 @@ Source: [gitlab.com/notabene/open-source/javascript-sdk](https://gitlab.com/nota
 | **Connect Wallet** | When you need to verify that a customer controls a self-hosted (unhosted) wallet |
 | **Deposit Assist** | Post-deposit, when Travel Rule data arrived incomplete — collects missing originator info from your depositing customer |
 
-> The components are rendered inside an iframe pointing to `https://embedded.notabene.id`. The SDK handles all iframe setup, configuration passing, and two-way communication. You never interact with the iframe directly.
-
 ---
 
 ## Installation
 
-```bash
-npm install @notabene/javascript-sdk
-```
-
-Or via CDN (plain HTML):
-```html
-<script src="https://unpkg.com/@notabene/javascript-sdk/dist/notabene.js"></script>
-```
+`npm install @notabene/javascript-sdk`, or via CDN:
+`<script src="https://unpkg.com/@notabene/javascript-sdk/dist/notabene.js"></script>`
 
 ---
 
 ## Authentication: Customer Token
 
-**Never** use your API access token in the frontend. The SDK requires a short-lived **customer token** scoped to a specific user, generated server-side.
+**Never** use your API access token ([how to get one](guide-travel-rule-api.md#authentication)) in the frontend. The SDK requires a short-lived **customer token** scoped to a specific user, generated server-side.
 
 ### Generate on your backend
 
@@ -53,12 +45,7 @@ Content-Type: application/json
 }
 ```
 
-**Response:**
-```json
-{
-  "token": "eyJhbGc..."
-}
-```
+**Response:** `{ "token": "eyJhbGc..." }`
 
 > **Important:** `customerRef` must be unique and stable per customer. Reusing the same ref across different customers breaks ownership proof reusability. Generate the token server-side immediately before rendering the component — do not cache it long-term.
 
@@ -226,21 +213,6 @@ const withdrawal = notabene.createWithdrawalAssist(data, {
   counterpartyAssist: true,
 });
 ```
-
----
-
-## Architecture note (for contributors / SDK maintainers)
-
-The embedded UI is a SvelteKit application deployed to Cloudflare Pages:
-
-| Environment | URL | DID |
-|---|---|---|
-| Production | `https://embedded.notabene.id` | `did:web:flow.link` |
-| Preview | `https://embedded-preview.notabene.dev` | `did:web:dev.flow.link` |
-
-The app hosts a `did:web` DID document at `/.well-known/did.json` used for DIDComm messaging. Configuration is passed into each component via URL parameters. The JavaScript SDK wraps the component in an iframe and handles the two-way communication protocol described in `docs/host-spec.md` in the embedded-ui repo.
-
-Components are developed and tested using Storybook (`npm run storybook` → `http://localhost:6006`).
 
 ---
 

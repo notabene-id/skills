@@ -26,7 +26,7 @@ Infer it from the codebase, config or credentials before asking. Ask only when n
 | Base URL | `api.notabene.id` (test `api.notabene.dev`) | `api.eu1.notabene.id` | `sandbox.notabene.id`, `eu-a.notabene.id`, `us-a.notabene.id` |
 | Paths | `/tx/create`, `/tx/info`, `/tx/update` | `/entities/{entityDID}/tx` | `/api/v1/transfers`, `/api/v1/customers` |
 | Institution id | `vaspDID` (often `did:ethr:…`) | `entityDID` in the path | None: the token identifies it |
-| Statuses | `NEW`, `SENT`, `ACK`, `ACCEPTED`, … | `PENDING`, `AUTHORIZED`, `SETTLED`, … | `Active`, `ReadyToSettle`, `Settled`, … |
+| Statuses | `NEW`, `SENT`, `ACK`, `ACCEPTED`, … | `OUTGOING`/`INCOMING`, `AUTHORIZED`, `SETTLED`, … | `Active`, `ReadyToSettle`, `Settled`, … |
 | Webhooks | `notification.transactionUpdated` | `notification.*`, `tap.*` | `transfer.*.v3` |
 | Amounts | Integer base units, asset symbols | Decimal strings, CAIP-19 | Whole-unit decimal strings, CAIP-19 |
 | Broadcast after | `ACCEPTED` | `AUTHORIZED` | `ReadyToSettle` |
