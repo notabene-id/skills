@@ -1,0 +1,25 @@
+# Notabene API v1 (legacy)
+
+Route for integrations on `https://api.notabene.id` (test: `https://api.notabene.dev`): transactions keyed by
+`vaspDID`, created with `POST /tx/create` and driven through `/tx/*` verbs. Treat v1 code as maintenance: fix it in v1
+terms, and propose migration to v2.1 rather than extending it with new features.
+
+| Need | Guide |
+|---|---|
+| Recognising v1, auth, errors, the transaction object, statuses, which verb when | [`getting-started.md`](getting-started.md) |
+| Withdrawals (originator) | [`send.md`](send.md) |
+| Deposits (beneficiary), `/tx/notify`, address registration | [`receive.md`](receive.md) |
+| Webhook setup, verification, payload, events | [`webhooks.md`](webhooks.md) |
+| Gotchas, and the facts that could not be confirmed (token URL, audience) | [`caveats.md`](caveats.md) |
+
+**Originator:** optional `POST /tx/validate/full` → `POST /tx/create` (set a unique `transactionRef`) → `/tx/approve`
+unless an auto-approve rule does it (`NEW` → `SENT`) → wait for the beneficiary institution (`SENT` → `ACK` →
+`ACCEPTED`) → broadcast only after `ACCEPTED` → record the hash with `POST /tx/update`.
+
+**Beneficiary:** register deposit addresses → on `SENT`, `/tx/confirm` the address (→ `ACK`) or `/tx/reject` →
+`/tx/accept` or `/tx/decline` (only from `ACK`; confirming is not accepting). A deposit seen on-chain first is reported
+with `POST /tx/notify`, whose hash is the settlement.
+
+**Gotchas:** amounts are integer base units (`"1000000000000000000"` = 1 ETH), not decimals; a 200 from `/tx/update` can
+be a silent no-op and `/tx/info` answers an empty 200 for a transaction you cannot see, so re-read and check; webhooks
+may omit PII (re-read with `/tx/info`).
