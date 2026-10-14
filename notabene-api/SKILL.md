@@ -1,14 +1,9 @@
 ---
 name: notabene-api
 description: >
-  Notabene Transact (Travel Rule) API integration guide for all three API generations:
-  v1 (legacy, /tx/create, vaspDID), v2 (api.eu1.notabene.id, /entities/{entityDID}) and
-  v2.1, the current platform (sandbox.notabene.id, /api/v1/transfers). Use when building,
-  migrating or debugging code that calls Notabene endpoints or handles Notabene webhooks,
-  choosing how to integrate, or asking how Notabene works technically. Also triggers on
-  entityDID, vaspDID, ReadyToSettle, IVMS101, notabene auth token, customer token,
-  @notabene/javascript-sdk, WithdrawalAssist, DepositAssist, DepositRequest, ConnectWallet,
-  and wallet or custody providers acting as agents.
+  Integrate with Notabene Transact, Notabene's Travel Rule API. Use when writing, migrating or
+  debugging code that calls Notabene endpoints or handles Notabene webhooks, or when asking how a
+  Notabene integration works. Covers API v1, v2 and v2.1, and the Notabene JavaScript SDK.
 ---
 
 # Notabene API
