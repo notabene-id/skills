@@ -1,6 +1,6 @@
 # Notabene API v2
 
-Route for integrations on `https://api.eu1.notabene.id`, with paths under `/entities/{entityDID}/…`.
+Route for integrations on `https://api.eu1.notabene.id` or `https://api.us1.notabene.id`, with paths under `/entities/{entityDID}/…`.
 
 Read [`guide-travel-rule-api.md`](guide-travel-rule-api.md) end to end before writing code: it is the one home for
 authentication, identifiers, webhook setup and verification, and statuses.

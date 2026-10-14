@@ -50,11 +50,14 @@ Response: `{ "access_token": "eyJhbGc...", "expires_in": 86400, "token_type": "B
 
 3. Send `Authorization: Bearer <access_token>` on every request.
 
-| | Production | Test |
-|---|---|---|
-| Base URL | `https://api.eu1.notabene.id` | `https://api.notabene.dev` |
-| Token `audience` | `https://api.eu1.notabene.id` | `https://api.notabene.dev` |
-| Token URL | `https://auth.notabene.id/oauth/token` | `https://auth.notabene.id/oauth/token` |
+| | Production (EU) | Production (US) | Test |
+|---|---|---|---|
+| Base URL | `https://api.eu1.notabene.id` | `https://api.us1.notabene.id` | `https://api.notabene.dev` (unconfirmed) |
+| Token `audience` | `https://api.eu1.notabene.id` | `https://api.us1.notabene.id` (presumed) | `https://api.notabene.dev` (unconfirmed) |
+| Token URL | `https://auth.notabene.id/oauth/token` | `https://auth.notabene.id/oauth/token` | `https://auth.notabene.id/oauth/token` |
+
+Use the region your onboarding names. The test host is unconfirmed: `https://api.notabene.dev` is also the v1 test
+host, so check with Notabene which test host serves v2.
 
 Almost every path includes `{entityDID}`: your institution's DID (e.g. `did:web:your-vasp.com`).
 
