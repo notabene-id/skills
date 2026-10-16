@@ -1,10 +1,10 @@
 ---
 name: notabene-api
 description: >
-  Integrate with Notabene Transact, Notabene's Travel Rule API. Use when writing, migrating or
-  debugging code that calls Notabene endpoints or handles Notabene webhooks, when exchanging
-  Travel Rule or IVMS101 data through Notabene, or when asking how a Notabene integration works.
-  Covers API v1, v2 and v2.1, and the Notabene JavaScript SDK.
+  Integrate with Notabene Transact, Notabene's Travel Rule API. Use when writing, migrating or debugging code
+  that calls Notabene endpoints or handles Notabene webhooks, when adding Travel Rule checks to withdrawals,
+  deposits or wallet creation, when exchanging Travel Rule or IVMS101 data through Notabene, or when asking how a
+  Notabene integration works. Covers API v1, v2 and v2.1, and the Notabene JavaScript SDK.
 ---
 
 # Notabene API
@@ -35,6 +35,18 @@ uses `api.eu1.notabene.id`.
 
 New integrations go on v2.1 unless Notabene has told the institution otherwise. Existing integrations stay on their
 version. To migrate, read both versions' READMEs and map every call, status and webhook event explicitly.
+
+## Where it goes in the codebase
+
+Whatever the version, the integration lives in four places in the integrator's code. Find them before writing any
+call, then follow that version's `integration-points.md`:
+
+1. **Withdrawals:** a pre-authorization hook after the withdrawal is validated and before it is signed or broadcast.
+   The withdrawal waits in its own state until the "broadcast after" signal, and is cancelled on a rejection.
+2. **New wallets:** register every deposit address with its customer when it is created or allocated.
+3. **Existing addresses:** a one-off, resumable backfill of the addresses already issued.
+4. **Deposits:** when funds arrive, match them to the incoming transfer, then credit or hold per the version's guide
+   and the institution's policy.
 
 ## Rules for every version
 

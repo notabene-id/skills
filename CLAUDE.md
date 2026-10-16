@@ -73,6 +73,9 @@ When reviewing or editing a skill, verify:
   - `transact-send.md`: requirement `type` is PascalCase while the resolve path takes kebab-case.
   - `customers.md`: the customer id is always required on a transfer, an inline profile only alongside it (the
     node's OpenAPI says otherwise; its code agrees with the guide).
+- Each version folder has an `integration-points.md`: where to hook Notabene into an integrator's codebase (the
+  pre-broadcast withdrawal hook, registering addresses as wallets are created, backfilling existing addresses, the
+  deposit path). Keep it in step with that version's send/receive guides and its safe-to-send signal.
 - `references/v1/` is written from the node's typed v1 client (`go/pkg/clients/nb/legacy/node/`); `references/v2/`
   can be checked against the node's V2 route declarations (`go/services/node/internal/api/oldnode/`).
 - Facts that could not be confirmed are marked as such in the guides (for example `references/v1/caveats.md`).

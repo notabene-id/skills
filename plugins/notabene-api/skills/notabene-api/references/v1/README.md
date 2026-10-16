@@ -7,6 +7,7 @@ terms, and propose migration to v2.1 rather than extending it with new features.
 | Need | Guide |
 |---|---|
 | Recognising v1, auth, errors, the transaction object, statuses, which verb when | [`getting-started.md`](getting-started.md) |
+| Where to hook Notabene into the codebase: the pre-broadcast withdrawal hook, registering addresses as wallets are created, backfilling existing addresses, the deposit path | [`integration-points.md`](integration-points.md) |
 | Withdrawals (originator) | [`send.md`](send.md) |
 | Deposits (beneficiary), `/tx/notify`, address registration | [`receive.md`](receive.md) |
 | Webhook setup, verification, payload, events | [`webhooks.md`](webhooks.md) |

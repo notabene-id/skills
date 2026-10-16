@@ -20,6 +20,7 @@ Live**), reconcile with it: build for the saved type, or tell the user why it sh
 | Path | Read |
 |---|---|
 | Every path | [`authentication.md`](authentication.md), then [`webhooks.md`](webhooks.md) — endpoint, Svix verification, events, statuses |
+| Where to hook it into the codebase | [`integration-points.md`](integration-points.md) — the pre-broadcast withdrawal hook, registering addresses as wallets are created, backfilling existing addresses, the deposit path |
 | Customers (every path) | [`customers.md`](customers.md) — register once, ids on transfers, IVMS-101 minimums |
 | Deposit addresses (every path that receives) | [`wallets.md`](wallets.md) — CAIP-10 registration, confirmation requests, self-hosted wallet proofs |
 | Withdrawals | [`transact-send.md`](transact-send.md) — assess, create, requirements, `ReadyToSettle`, settle |

@@ -7,6 +7,7 @@ authentication, identifiers, webhook setup and verification, and statuses.
 
 | Need | Guide |
 |---|---|
+| Where to hook Notabene into the codebase: the pre-broadcast withdrawal hook, registering addresses as wallets are created, backfilling existing addresses, the deposit path | [`integration-points.md`](integration-points.md) |
 | Outgoing and incoming transfers, PII, authorize/reject, settle | [`guide-travel-rule-api.md`](guide-travel-rule-api.md) |
 | Endpoints for the flows above, request and response schemas | [`api-reference.md`](api-reference.md) |
 | Every webhook event and payload | [`webhooks.md`](webhooks.md) |
