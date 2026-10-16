@@ -1,7 +1,7 @@
-# How Notabene Transact works
+# Overview
 
-The model behind the API, for developers who know payment APIs: what the Travel Rule asks of a crypto transfer, which
-parts Notabene handles and which stay yours, and how a transfer moves from created to settled.
+How Notabene Transact works and where to start: the model in payment terms, what Notabene handles and what stays
+yours, and the path from your first call to live traffic.
 
 ## In one minute
 
@@ -12,6 +12,39 @@ the crypto yourself; Notabene tells you when it is safe to.
 
 Three things are enough to start: a **transfer** is one payment; a **customer** is the person on each end; a
 **wallet address** is where the crypto lands. The sections below explain each in payment-API terms.
+
+## Where to start
+
+1. Settle your integration type: which way crypto moves, who holds your wallets, and whether your app checks
+   withdrawals as customers type ([Go live](go-live.md#what-each-answer-means)). In the dashboard, **Integration → Go
+   Live** saves that type and tracks every step it needs, read from what your institution has actually set up and
+   sent.
+2. [Authentication and API conventions](authentication.md). Create an API credential and swap it for a token.
+3. Build the steps in the order [Go live](go-live.md) lists them. Each links to the guide that shows the calls.
+4. [Pre-production checklist](pre-production.md). Before real traffic, check what only your code can show.
+
+Build in sandbox first: it has its own account, credentials and data, and nothing there reaches production. When it
+all works, set up production the same way. In production, transfers move real funds, so run a transfer end to end in
+sandbox before you switch.
+
+## How it works
+
+When your customer withdraws crypto, the Travel Rule requires you to send who they are, and who they are paying, to
+the institution receiving the funds: the same originator and beneficiary information a wire transfer carries.
+Notabene Transact finds that institution, exchanges the data with it, and tells you when it is safe to send.
+
+```text
+Your customer (originator) → your institution (sending) → counterparty institution (receiving) → their customer (beneficiary)
+```
+
+1. You create a transfer: the amount, the destination address, and both customers.
+2. Notabene identifies the institution behind the address and exchanges the Travel Rule data with it.
+3. Each institution authorizes. Webhooks tell you what is still needed, then that the transfer is `ReadyToSettle`.
+4. You broadcast on-chain, as you do today, and tell Notabene the transaction hash.
+
+Deposits run the same chain in the other direction: the sender's institution creates the transfer, and you
+authorize it. [Send a transfer](transact-send.md) and [Receive a transfer](transact-receive.md) map each step to the
+call your code makes.
 
 ## The Travel Rule, in payment terms
 
@@ -41,10 +74,6 @@ Notabene never holds keys or moves funds. Your wallets, custody and broadcasting
 tells you when it is safe to broadcast.
 
 ## The pieces
-
-```text
-Originator → sending institution → receiving institution → beneficiary
-```
 
 | Term | What it is | Payment-API equivalent |
 |---|---|---|
@@ -78,5 +107,5 @@ transfer, as you would with any payment API, rather than as the record itself.
 | Customers | Register each customer once with their details, then name them by id on transfers. [Customers](customers.md) |
 | Wallet addresses | Register each deposit address you issue, so senders find you and confirmations answer themselves. [Wallet addresses](wallets.md) |
 
-If a wallet provider such as Fireblocks holds your addresses, connecting it removes most of that work. [Choose your
-integration](choose-your-integration.md) settles which path is yours, and [Go live](go-live.md) tracks your progress.
+If a wallet provider such as Fireblocks holds your addresses, connecting it removes most of that work. [Go
+live](go-live.md) explains each integration type and tracks the steps for yours.

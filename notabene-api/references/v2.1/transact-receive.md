@@ -21,6 +21,23 @@ There are two shapes. Work out which one you are in first:
 - **Seen on-chain first.** Funds arrive with no Travel Rule data attached. You create the record and Notabene finds the
   sender.
 
+## How it works
+
+When a transfer is announced before settlement, the sending institution drives it and your code answers. Each step
+lines up with one event your code handles or one call it makes.
+
+```text
+Their customer (originator) → counterparty institution (sending) → your institution (receiving) → your customer (beneficiary)
+```
+
+| | What happens | Your code |
+|---|---|---|
+| 0 | Once: you registered your customer and their deposit address. | `POST /api/v1/customers` · `POST /api/v1/wallets` |
+| 1 | The sending institution creates the transfer; the address resolves to you. | `transfer.created.v3`, `direction: "Incoming"` |
+| 2 | "Is this address yours?" is answered for you, because you registered it. | nothing |
+| 3 | You check the beneficiary is your customer, then authorize. | `POST /api/v1/transfers/{id}/authorize` |
+| 4 | The sender broadcasts and settles; you credit your customer. | `transfer.status_changed.v3` → `Settled` |
+
 ## Do this once: register your deposit addresses
 
 Register every deposit address as you issue it, with the customer it belongs to ([Wallet addresses](wallets.md)).

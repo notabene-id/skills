@@ -58,7 +58,15 @@ curl -s https://sandbox.notabene.id/api/v1/transfers/$ID/requirements/wallet-add
   -d '{"outcome":"confirmed"}'
 ```
 
-`rejected` is final: it rejects the transfer, and later transfers to that address are refused until you register it.
+`rejected` is final for this transfer: it rejects the transfer and tells the counterparty the address is not yours.
+What happens next time depends on who said it was yours:
+
+- **Only a counterparty claimed it.** The rejection also withdraws that claim, so later transfers to the address are
+  rejected the same way until you register it.
+- **You said so yourself** (you registered it, confirmed it before, or used it on a transfer you created). The
+  rejection answers this transfer only; a later transfer to the address can still be confirmed. De-register the
+  wallet (`DELETE /api/v1/wallets/{address}`) to stop that.
+
 Registering your addresses as you issue them means this rarely reaches you.
 
 ## Your customer's own wallet

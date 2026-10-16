@@ -53,12 +53,16 @@ curl -s https://sandbox.notabene.id/api/v1/customers \
 
 ## Name them on transfers
 
-Pass the id on every transfer: `originator_id` when your customer sends, `beneficiary_id` when they receive. The id is
-always required. A profile inline on the transfer (`originator`, `beneficiary`) is optional; when you send one, it
-replaces the stored profile, so send it only when the details really changed.
+Name each customer on a transfer by id: `originator_id` when your customer sends, `beneficiary_id` when they
+receive. A profile inline on the transfer (`originator`, `beneficiary`) is optional and goes alongside the id, not
+instead of it. The API reference describes the `*_id` fields as an alternative to the inline profile, but an inline
+profile sent without its id is rejected, and a profile sent as `ivms_encrypted` always needs its `*_id`, since no id
+can be read from an encrypted blob. For a registered customer, an inline profile replaces the stored one, so
+send it only when the details really changed.
 
 The counterparty's customer gets an id too: yours to choose, for example a `urn:uuid:` per transfer, with the
-profile you know inline.
+profile you know inline. Name them on every withdrawal: the Travel Rule asks for the beneficiary's
+name, and a transfer that gives a `settlement_address` but no `beneficiary_entity_did` is rejected without one.
 
 ## Update and delete
 

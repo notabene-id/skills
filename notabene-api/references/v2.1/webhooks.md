@@ -19,7 +19,8 @@ its signing secret (`whsec_…`). One endpoint per institution; send a test even
 ## 2. Verify every request
 
 Use an official Svix library with the **raw** request body and the `svix-id`, `svix-timestamp` and `svix-signature`
-headers. Verify before parsing: re-serialised JSON fails verification.
+headers. Verify before parsing: re-serialised JSON fails verification. Each example answers `400` to a bad signature,
+saves the event keyed by `svix-id`, and answers `500` if saving fails so Svix retries.
 
 ```js
 import { Webhook } from "svix";
@@ -43,6 +44,48 @@ app.post("/notabene/webhooks", express.raw({ type: "application/json" }), async 
 });
 ```
 
+```go
+import svix "github.com/svix/svix-webhooks/go"
+
+verifier, err := svix.NewWebhook(os.Getenv("NOTABENE_WEBHOOK_SECRET"))
+if err != nil {
+	log.Fatal(err)
+}
+
+http.HandleFunc("POST /notabene/webhooks", func(w http.ResponseWriter, r *http.Request) {
+	payload, err := io.ReadAll(r.Body)
+	if err != nil || verifier.Verify(payload, r.Header) != nil {
+		w.WriteHeader(http.StatusBadRequest) // bad signature: never retried into success
+		return
+	}
+	// Persist before acknowledging; the svix-id de-duplicates retries of the same event.
+	if err := queue.Add(r.Context(), r.Header.Get("svix-id"), payload); err != nil {
+		w.WriteHeader(http.StatusInternalServerError) // not saved: let Svix retry
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+})
+```
+
+```python
+from svix.webhooks import Webhook, WebhookVerificationError
+
+verifier = Webhook(os.environ["NOTABENE_WEBHOOK_SECRET"])
+
+@app.post("/notabene/webhooks")
+def notabene_webhook():
+    try:
+        event = verifier.verify(request.get_data(), request.headers)
+    except WebhookVerificationError:
+        return "", 400  # bad signature: never retried into success
+    try:
+        # Persist before acknowledging; the svix-id de-duplicates retries of the same event.
+        queue.add(event, job_id=request.headers["svix-id"])
+    except Exception:
+        return "", 500  # not saved: let Svix retry
+    return "", 204
+```
+
 During secret rotation the old secret stays valid for a grace period.
 
 ## 3. Handle events safely
@@ -53,6 +96,9 @@ During secret rotation the old secret stays valid for a grace period.
   source of truth.
 - **Acknowledge in seconds, after the event is saved.** Write it somewhere durable, answer `2xx`, then do the work
   asynchronously. Anything else is retried; the dashboard's message log can resend and replay.
+- **Sweep for missed work.** A scheduled job pages `GET /api/v1/transfers` (for example `status=Active` and
+  `status=SettledIncompleteAuthorization`) and reads each with `GET /api/v1/transfers/{id}`: `requires_action` is on
+  the single-transfer read, not on list items, and the list cannot filter on it.
 
 ## Events
 
@@ -83,10 +129,13 @@ Field casing is not uniform: `transfer.created.v3` sends `settlement_id`, `trans
 | `Settled` | Funds moved and everyone authorized. Done. |
 | `SettledIncompleteAuthorization` | Funds moved; decisions still outstanding. Keep answering requirements. |
 | `SettledCanceled` | Funds moved after a cancellation. Investigate. |
-| `RevertRequested` … `Reverted` | A linked return transfer is under way or done. |
+| `RevertRequested`, `RevertAuthorized` | On a settled transfer: a revert (a new, linked transfer returning the funds) was requested, then authorized by everyone. The return is under way. |
+| `RevertRejected`, `RevertCanceled` | The revert itself was rejected or canceled; the original settlement stands. |
+| `Reverted`, `RevertedIncompleteAuthorization` | The revert settled: the funds came back. The second means it settled before every agent had authorized it. |
 
 ## An event did not arrive
 
 1. Check the endpoint's message log under **Integration → Webhooks**: delivered, failed, or never sent.
 2. Check the endpoint is enabled and subscribed to that event type.
-3. Read the transfer. `requires_action: true` means something waits on you, whatever events you received.
+3. Read the transfer with `GET /api/v1/transfers/{id}`. `requires_action: true` means something waits on you, whatever
+   events you received.

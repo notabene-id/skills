@@ -15,6 +15,22 @@ Before you send a customer's crypto out, tell Notabene, and wait for its go-ahea
 
 Most transfers need nothing else. The steps below add the optional pre-check and the cases that need you.
 
+## How it works
+
+Each step between the two institutions lines up with one call your code makes or one event it handles.
+
+```text
+Your customer (originator) → your institution (sending) → counterparty institution (receiving) → their customer (beneficiary)
+```
+
+| | What happens | Your code |
+|---|---|---|
+| 1 | Your customer confirms the withdrawal in your app. | `POST /api/v1/transfers/assess` (optional) |
+| 2 | You create the transfer; Notabene finds the institution behind the destination address. | `POST /api/v1/transfers` → `Active` |
+| 3 | Travel Rule data is exchanged; anything that waits on you is raised. | `requirements.pending.v3` → resolve |
+| 4 | Both institutions authorize. | `transfer.status_changed.v3` → `ReadyToSettle` |
+| 5 | You broadcast, then record the transaction hash. | `POST /api/v1/transfers/{id}/settle` |
+
 ## 1. Assess (optional, recommended)
 
 Before you show the withdrawal confirmation, ask what the transfer will need. Assess creates nothing.
@@ -53,16 +69,19 @@ The response is `{"transferId": "…", "status": "Active"}`. Store `transferId` 
 - **`ref`** is your idempotency key. Generate and persist it before the call; on a timeout, replay the identical body.
 - **The receiving institution** is discovered from `settlement_address`. Set `beneficiary_entity_did` when you already
   know it.
-- **Customers.** Every transfer names both customers by id. Your customer is registered once
+- **Customers.** Name each customer by id; an inline profile goes alongside its id, never instead of it (an inline
+  `originator` or `beneficiary` without its `*_id` is rejected). Your customer is registered once
   ([Customers](customers.md)), so `originator_id` is enough. The beneficiary is the counterparty's customer: give
-  them an id of your own and the details you know inline as `beneficiary`.
+  them an id of your own as `beneficiary_id` and the details you know inline as `beneficiary`.
 - **Self-hosted destination** (the customer's own wallet): attach `beneficiary_proof_of_ownership`, such as an
   `eip-191` signature; inline proofs need a DID as `beneficiary_id`. See [Wallet addresses](wallets.md).
 - **Your own valuation.** If you price the asset yourself, pass `fiat_amount_usd`; it decides the threshold.
 
 ## 3. Answer requirements
 
-A `requirements.pending.v3` webhook lists what is outstanding. Act on each item whose `agentId` is your DID:
+A `requirements.pending.v3` webhook lists what is outstanding. Act on each item whose `agentId` is your DID. Each item's
+`type` is PascalCase (`BeneficiaryNameMatch`), while the resolve path takes the kebab-case name
+(`beneficiary-name-match`); its `id` is the `evaluationId` that skip takes.
 
 | Requirement | Do this |
 |---|---|
