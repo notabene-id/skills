@@ -57,6 +57,32 @@ When reviewing or editing a skill, verify:
    top of any reference file over 100 lines; every relative link and anchor resolves
 6. **Directory limits** — every file under 256 KiB and at most 512 files per plugin
 
+### notabene-api specifics
+
+- `SKILL.md` is a router: the version-detection table plus rules that hold for every version. Version-specific detail
+  goes in `references/<v1|v2|v2.1>/`, each routed by its own `README.md`. Never mix calls or field names across versions.
+- Flow (payments) is out of scope for now: no Flow endpoints, `flow.*` events, or Flow fields.
+- `references/v2.1/` is a copy of notabene-id/node's `plugins/notabene/skills/notabene-api/guides/`. Re-sync it when
+  the node's guides change: strip dashboard-only markup (`<!-- slot:… -->`, `<!-- environments -->`,
+  `<!-- sandbox -->`/`<!-- production -->`, `transfer-chain` fences, `tab=` labels), leave out `coding-agents.md`,
+  and update `references/v2.1/README.md`. Keep these deliberate corrections, which upstream does not have yet:
+  - `wallets.md`: a `rejected` address confirmation refuses later transfers only when just a counterparty claimed the
+    address; if you registered, confirmed or used it, the rejection answers that transfer only.
+  - `webhooks.md`: the revert statuses list all six (`RevertRequested` … `RevertedIncompleteAuthorization`);
+    `requires_action` is only on `GET /api/v1/transfers/{id}`; errors include `400` as well as `422`.
+  - `transact-send.md`: requirement `type` is PascalCase while the resolve path takes kebab-case.
+  - `customers.md`: the customer id is always required on a transfer, an inline profile only alongside it (the
+    node's OpenAPI says otherwise; its code agrees with the guide).
+- `references/v1/` is written from the node's typed v1 client (`go/pkg/clients/nb/legacy/node/`); `references/v2/`
+  can be checked against the node's V2 route declarations (`go/services/node/internal/api/oldnode/`).
+- Facts that could not be confirmed are marked as such in the guides (`references/v1/caveats.md`, the v2 test host).
+  Replace the marker once a fact is confirmed; never state a guess as fact.
+
+### Keep this file current
+
+Update this `CLAUDE.md` in the same PR whenever a change alters how the repo works: its layout, the manifests, the
+validation steps, a plugin's conventions or sources, or anything a future session would otherwise have to rediscover.
+
 ### Commit hygiene
 
 - Keep commits focused: one plugin per commit when possible
