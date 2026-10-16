@@ -89,7 +89,7 @@ POST /auth/customerToken
 
 | Thing | Format |
 |---|---|
-| VASP id | `vaspDID`. The API only enforces the pattern `^did:[a-zA-Z0-9]*:.*$`. Spec examples use `did:ethr:0x…`. Copy yours from the dashboard. |
+| VASP id | `vaspDID`. Usually `did:ethr:0x…` (the API only enforces the pattern `^did:[a-zA-Z0-9]*:.*$`). Copy yours from the dashboard. |
 | Transfer id | `id`, a UUID that Notabene assigns on create |
 | Your reference | `transactionRef`: the idempotency key, unique per originator VASP |
 | Customer | `originatorDid` / `beneficiaryDid`, created by Notabene from `originatorRef` / `beneficiaryRef` when you leave them out |

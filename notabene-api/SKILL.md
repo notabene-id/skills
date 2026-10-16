@@ -33,7 +33,7 @@ Infer it from the codebase, config or credentials before asking. Ask the user on
 |---|---|---|---|
 | Base URL | `https://api.notabene.id` (test: `https://api.notabene.dev`) | `https://api.eu1.notabene.id` | `https://sandbox.notabene.id`, `https://eu-a.notabene.id`, `https://us-a.notabene.id` |
 | Path shape | `/tx/create`, `/tx/info`, `/tx/update`, `/tx/list?vaspDID=…` | `/entities/{entityDID}/tx`, `/entities/{entityDID}/relationships` | `/api/v1/transfers`, `/api/v1/customers`, `/api/v1/wallets` |
-| Institution id | `vaspDID` (often `did:ethr:…`) | `entityDID` in every path (`did:web:…`) | None in the path: the token identifies the institution |
+| Institution id | `vaspDID` (usually `did:ethr:…`) | `entityDID` in every path (usually `did:web:…`) | `did:web:…`, not in the path: the token identifies the institution |
 | Transfer statuses | `NEW`, `MISSING_BENEFICIARY_DATA`, `WAITING_FOR_INFORMATION`, `INCOMPLETE`, `NOT_READY`, `SENT`, `ACK`, `ACCEPTED`, `DECLINED`, `REJECTED`, `CANCELLED`, `SAVED` | `AWAITING-YOURS`, `AWAITING-COUNTERPARTY`, `AUTHORIZED`, `REJECTED`, `SETTLED`, … | `Active`, `ReadyToSettle`, `Settled`, `Rejected`, `Canceled`, … |
 | Webhooks | Svix, `{ "message", "payload": { "transaction" }, "version" }` with `notification.*` events (registered via `POST /webhook`); deprecated unsigned `txnotification` callback posts the raw transaction | Svix, `{ "message", "payload", "version" }` with `notification.*` / `tap.*` events | Svix, `whsec_` secret set on Integration → Webhooks; `transfer.*.v3` events (`transfer.status_changed.v3`, …) |
 | Body casing | camelCase (exceptions: `vasp_did` on `/tx/cancel` and `/v1/addresses`); IVMS uses `nameIdentifierType` | camelCase | snake_case (IVMS-101 keys stay camelCase) |
