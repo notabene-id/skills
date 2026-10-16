@@ -12,7 +12,7 @@ other files link here.
 - Embedded UI components: [guide-javascript-sdk.md](guide-javascript-sdk.md)
 - Upstream reference: [devx.notabene.id/reference](https://devx.notabene.id/reference)
 
-## Table of Contents
+## Contents
 
 - [Authentication](#authentication)
 - [Identifier Formats](#identifier-formats)
@@ -71,8 +71,8 @@ Almost every path includes `{entityDID}`: your institution's DID (e.g. `did:web:
 |---|---|---|
 | DID (institution) | `did:web:your-vasp.com` | `entityDID`, VASP / Custodian agents |
 | `did:pkh` (address as DID) | `did:pkh:eip155:1:0x742d35Cc...` | `SourceAddress` / `SettlementAddress` agents, relationship `from` |
-| `mailto:` | `mailto:customer@example.com` | Customer `@id` (originator / beneficiary) |
-| CAIP-19 (asset) | `eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` | `asset` (or a 2–20 char abbreviation like `BTC`) |
+| `mailto:` | `mailto:customer@example.com` | Customer `@id` (originator / beneficiary; any IRI, e.g. `mailto:` or `did:`) |
+| CAIP-19 (asset) | `eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` | `asset` (or a 2–20 char uppercase symbol like `BTC`, or a DTI) |
 | CAIP-10 (account) | `eip155:1:0x742d35Cc...` | `settlementAddress`, address-ownership lookup |
 | CAIP-220 (tx) | `eip155:1:tx/0x3edb98...` | `settlementId` (recommended format) |
 
@@ -82,8 +82,17 @@ Almost every path includes `{entityDID}`: your institution's DID (e.g. `did:web:
 
 ### Webhook Setup
 
-Configure endpoints in the Notabene dashboard under Settings and subscribe to the events you need (see
-[Webhooks You Must Handle](#webhooks-you-must-handle) and the full catalogue in [webhooks.md](webhooks.md)).
+No webhooks are sent until you enable them for your entity:
+
+- `PUT /entities/{entityDID}/webhook` enables webhooks (creates the entity's Svix application; idempotent) and returns
+  `{ "svix": <application> }`.
+- `GET /entities/{entityDID}/webhook?generate_portal_url=true` returns `{ "svix": <application>, "svixPortalUrl" }`.
+  In that Svix portal, add your endpoint URLs, subscribe to the events you need, and copy each endpoint's signing
+  secret (`whsec_…`).
+- `DELETE /entities/{entityDID}/webhook` disables webhooks.
+
+Events to subscribe to: [Webhooks You Must Handle](#webhooks-you-must-handle) and the full catalogue in
+[webhooks.md](webhooks.md).
 
 ### Signature Verification
 
@@ -117,7 +126,7 @@ Every webhook uses the same envelope:
   "payload": {
     "id": "423ae44a-...",
     "for": "did:web:your-domain.com",
-    "fromStatus": "OUTGOING",
+    "fromStatus": "AWAITING-COUNTERPARTY",
     "toStatus": "AUTHORIZED"
   },
   "version": "1.0.0"
@@ -130,16 +139,19 @@ Every webhook uses the same envelope:
 | `payload` | All event data. `payload.id` is the transfer id (no top-level `id`); `payload.for` is the DID of the entity the webhook is for. |
 | `version` | Currently always `"1.0.0"` |
 
-Callback URLs in payloads (`callbackUrl`, `authorizeCallbackUrl`, ...) are **relative paths**: prepend the API base URL
-and otherwise call them as given, even when they use the deprecated `/transfers/...` prefix.
+Callback URLs in payloads (`callbackUrl`, `authorizeCallbackUrl`, ...) are **relative paths**, mostly with DIDs that
+are not URL-encoded: prepend the API base URL and URL-encode the entity DID path segment and any DIDs in the query
+that are not already encoded. They may
+use the deprecated `/transfers/...` prefix, an alias of `/tx/...` that still works.
 
 ### Delivery Guarantees
 
 - Delivered **at least once** and **in any order** (e.g. `AUTHORIZED`, `transferAgentAdded` and `transferCreated`
   can arrive in any sequence). Make handlers idempotent (de-duplicate on `svix-id` / transfer id + event), check
   current state, and re-read the transfer from the API rather than trusting the payload alone.
-- Response codes: `2xx` = processed; `4xx` = not retried; `5xx` = retried with exponential backoff (multiple attempts
-  over up to 3 days; failures visible in the Svix dashboard). Return `2xx` quickly and process heavy work async.
+- Response codes: `2xx` = processed; any other status, or a timeout, is a failure that Svix retries with exponential
+  backoff (failed messages can be inspected and resent from the Svix portal). Return `2xx` quickly and process heavy
+  work async.
 
 ---
 
@@ -220,11 +232,11 @@ the counterparty.
 
 | Field | Validation | Description |
 |---|---|---|
-| `originator` / `beneficiary` | `@id`: 3–255 chars, valid DID | Customer identifiers |
-| `asset` | CAIP-19 or 2–20 char abbreviation | e.g. `BTC` |
+| `originator` / `beneficiary` | `@id`: 3–255 chars, an IRI (`mailto:…`, `did:…`) | Customer identifiers |
+| `asset` | CAIP-19, 2–20 char uppercase symbol, or DTI | e.g. `BTC` |
 | `amount` | `^\d+(\.\d+)?$` | Decimal string |
 | `agents` | min 1 | Agent chain with `role` and `for` |
-| `ref` | `^[a-zA-Z0-9_-]{1,64}$` | Idempotency key (409 on duplicate) |
+| `ref` | `^[a-zA-Z0-9_-]{1,255}$` | Unique per transfer; a reused `ref` returns `409` |
 | `memoTag` | 1–28 printable ASCII | Optional memo/destination tag (XRP, XLM) |
 
 Optional fields (`settlementId`, `transactionValue`, `blockchainAnalyticsAlias`, agent `policies`):
@@ -240,6 +252,11 @@ Optional fields (`settlementId`, `transactionValue`, `blockchainAnalyticsAlias`,
 `originatorPresentationDefinition` / `beneficiaryPresentationDefinition` URLs (e.g.
 `https://pd.notabene.id/ivms101/v2/US-3000.json`) say which IVMS101 fields are required. Payload:
 [webhooks.md](webhooks.md#tap-policy-requirement-events).
+
+POST the PII to the payload's `callbackUrl`. With Notabene-managed encryption that is the transfer's `append` path,
+shown below. With entity-managed encryption it is
+`/entities/{entityDID}/tx/{transferId}/policies/{policyId}/presentation` instead
+([api-reference.md#pii](api-reference.md#pii)).
 
 Append PII (Notabene-managed encryption): `POST /entities/{entityDID}/tx/{transferId}/append`
 
@@ -289,6 +306,7 @@ After broadcasting (only once `AUTHORIZED`): `POST /entities/{entityDID}/tx/{tra
 ```
 
 `settlementId` is the on-chain transaction hash (max 255 chars), CAIP-220 `eip155:{chainId}:tx/{txHash}` recommended.
+Optional `settlementIdIndex` (vout/log index) disambiguates multi-output transactions.
 
 ---
 
@@ -302,19 +320,24 @@ After broadcasting (only once `AUTHORIZED`): `POST /entities/{entityDID}/tx/{tra
 { "from": "did:pkh:eip155:1:0xYourDepositAddress", "to": "did:web:your-vasp.com" }
 ```
 
-Pre-registered addresses are confirmed automatically when transfers arrive.
+A relationship that names your own `entityDID` as `from`, `to` or `custodian` is confirmed on creation, so transfers
+to pre-registered addresses do not wait for a confirmation.
 
-**Option B: respond to the webhook** — on `tap.requireRelationshipConfirmationRequested`, call the payload's
-`confirmCallbackUrl` to confirm ownership.
+**Option B: respond to the webhook** — on `tap.requireRelationshipConfirmationRequested`, call `PATCH` on the
+payload's `confirmCallbackUrl` (`/entities/{entityDID}/relationships?from=…&to=…`; its DIDs are unencoded, so
+URL-encode them) to confirm ownership.
 
 ### 2. Verify Beneficiary Name
 
 On `tap.requirePresentationSatisfied` (PII has arrived):
 
 1. `GET /entities/{entityDID}/tx/{transferId}?decrypt=true`
-2. Read `beneficiary.beneficiaryPerson.naturalPerson.name.nameIdentifier`.
+2. Read `transfer.beneficiary.beneficiaryPerson[0].naturalPerson.name.nameIdentifier[0]` (or
+   `legalPerson.name.nameIdentifier[0].legalPersonName`).
 3. Compare with your KYC records (fuzzy matching, ~90% threshold recommended).
-4. Complete both checks (no body) — both must pass before the transfer can be authorized:
+4. Complete the checks your entity has configured (no body); each configured check must be completed before the
+   transfer can be authorized. The webhook carries `confirmBeneficiaryCallbackUrl` / `confirmInternalChecksCallbackUrl`
+   only for the checks that exist on the transfer:
    - `POST /entities/{entityDID}/tx/{transferId}/checks/beneficiary-name-matching`
    - `POST /entities/{entityDID}/tx/{transferId}/checks/internal-checks`
 
@@ -347,8 +370,9 @@ GET /entities/{entityDID}/tx/match?settlement_id={txHash}&settlement_address={de
 
 | Parameter | Required | Description |
 |---|---|---|
-| `settlement_id` | yes | On-chain transaction hash |
-| `settlement_address` | yes | Destination address that received funds |
+| `settlement_id` | yes | On-chain transaction hash, CAIP-220 (`eip155:1:tx/0x…`) or raw |
+| `settlement_address` | yes | Destination address that received funds (plain, CAIP-10 or `did:pkh`) |
+| `asset` | no | CAIP-19; needed only when no input carries the chain (all plain) |
 | `settlement_id_index` | no | Vout or log index (UTXO chains, multi-transfer txs) |
 | `memo_tag` | no | Memo/tag (XRP, XLM) |
 | `direction` | no | `INCOMING` or `OUTGOING` |
@@ -367,7 +391,7 @@ identify the originator VASP and request Travel Rule data from it:
   "amount": "100.00",
   "agents": [{ "@id": "did:web:your-vasp.com", "role": "VASP", "for": "mailto:your-customer@example.com",
                "policies": [{ "@type": "REQUIRE_AUTHORIZATION" }] }],
-  "settlementId": "0xTransactionHash"
+  "settlementId": "eip155:1:tx/0xTransactionHash"
 }
 ```
 
@@ -381,17 +405,18 @@ Core lifecycle:
 
 | Status | Description |
 |---|---|
-| `OUTGOING` | New outgoing transfer created |
-| `INCOMING` | New incoming transfer received |
+| `AWAITING-YOURS` | Waiting on you (PII, address confirmation, proof of ownership, authorization); new transfers start here |
+| `AWAITING-COUNTERPARTY` | Waiting on the counterparty |
 | `AUTHORIZED` | Authorized by all required parties — the only signal to broadcast |
 | `REJECTED` | Rejected |
+| `FLAGGED` | Flagged for review |
 | `SETTLED` | Settled on-chain |
 | `REVERTED` | Reverted (terminal) |
 
-Full enum on the Transfer schema: `OUTGOING`, `INCOMING`, `AWAITING-YOURS`, `AWAITING-COUNTERPARTY`, `REJECTED`,
-`AUTHORIZED`, `FLAGGED`, `SETTLED`, `FLAGGED-SETTLEMENT`, `REVERTED`, `REVERT-AUTHORIZED`, `REVERT-REJECTED`,
-`REVERT-FLAGGED`, `REVERT-REQUESTED`, `FROZEN`, `CLEARED`. `PENDING`, seen in some webhook examples, is **not** a
-transfer status; don't branch on it.
+Revert, freeze and flag flows add `FLAGGED-SETTLEMENT`, `REVERT-REQUESTED`, `REVERT-AUTHORIZED`, `REVERT-REJECTED`,
+`REVERT-FLAGGED`, `FROZEN`, `CLEARED`. `OUTGOING` / `INCOMING` are deprecated statuses still found on older transfers;
+new transitions emit the `AWAITING-*` values. `PENDING`, seen in some webhook examples, is **not** a transfer status;
+don't branch on it.
 
 Per-agent status (`notification.transferAgentStatusChanged`): `PROCESSING`, `AUTHORIZED`, `REJECTED`, `SETTLED`,
 `FAILED`, `REPLACED`, `UNREACHABLE`. An individual agent authorizing is **not** enough to settle; wait for the
@@ -403,10 +428,10 @@ transfer-level `AUTHORIZED`.
 
 | Side | Event (`message`) | Action |
 |---|---|---|
-| Outgoing | `tap.requirePresentationRequested` | Append PII (or POST to `callbackUrl`) |
+| Outgoing | `tap.requirePresentationRequested` | POST the PII to `callbackUrl` (append, or presentation for entity-managed encryption) |
 | Outgoing | `notification.transferStatusChanged` | Broadcast only on `toStatus: "AUTHORIZED"`, then settle |
-| Incoming | `tap.requireRelationshipConfirmationRequested` | Confirm via `confirmCallbackUrl` |
-| Incoming | `tap.requirePresentationSatisfied` | Verify beneficiary name, complete both checks |
+| Incoming | `tap.requireRelationshipConfirmationRequested` | `PATCH` the `confirmCallbackUrl` |
+| Incoming | `tap.requirePresentationSatisfied` | Verify beneficiary name, complete the configured checks |
 | Incoming | `notification.transferStatusChanged` | Update internal records |
 
 Informational events and all payloads: [webhooks.md](webhooks.md).

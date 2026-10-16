@@ -7,8 +7,8 @@ rather than repeat them: [Getting started](getting-started.md), [Send](send.md),
 ## Quick start
 
 Check the five that bite most: amounts are integer base units; accept needs `ACK`; `/tx/info` and `/tx/update`
-succeed silently on transactions you can't see; omit keys rather than send `""`; build idempotency on
-`transactionRef`.
+succeed silently on transactions you can't see; omit keys rather than send `""`; send a persisted, unique
+`transactionRef`. Broadcast on `notification.processBlockchainTransaction`, never after a halt.
 
 ## Gotchas
 
@@ -37,26 +37,29 @@ succeed silently on transactions you can't see; omit keys rather than send `""`;
     beneficiary only after it confirms (until then `ivms101.originator` holds placeholder persons with empty names:
     check for a non-empty name identifier, not for presence). Cleartext you post is stored encrypted
     (IPFS-backed) and even `/tx/list?decrypt=true` doesn't resolve every field: keep your own copy of what you sent.
-11. **Idempotency is yours.** `/tx/create` has no idempotency key. Use a unique `transactionRef` and, before retrying a
-    timed-out create, check `GET /tx/list?vaspDID=…&transactionRef=…`. Webhooks are at-least-once.
+11. **Idempotency rides on `transactionRef`.** `/tx/create` has no separate idempotency key; when a transaction with the
+    same `transactionRef` already exists for the `originatorVASPdid`, it returns that one instead of creating another.
+    Persist a unique `transactionRef` before calling, and reuse it on retries. Webhooks are at-least-once.
 12. **Above-threshold data** rules (persons, account number, id/birth/address): see [Send § Create](send.md#2-create);
     validate with `/tx/validate/full`.
 13. **Deposit-notify ordering.** A beneficiary `/tx/update` with full data closes the originator's window
     ([Receive § Deposit first](receive.md#deposit-first-txnotify)).
 14. **Casing and pagination differ.** `/tx/list` uses `vaspDID` and `paginateInfo { totalItems, … }`; `/v1/addresses*`
-    uses `vasp_did`, `per_page` and `pagination { page, per_page, total }`; `/tx/cancel` uses `vasp_did`.
+    uses `vasp_did`, `per_page`, `source_type` and `pagination { page, per_page, total }`; `/tx/cancel` uses
+    `vasp_did`. Body fields spell `originatorVASPdid` (lowercase `did`), query parameters `vaspDID`.
 15. **`pending-` hashes.** A `txHash` starting with `pending-` is a pre-settlement placeholder, not an on-chain hash.
+16. **IVMS name type key.** v1 spells it `nameIdentifierType`, not IVMS's (and v2.1's)
+    `naturalPersonNameIdentifierType`; don't apply v2.1's IVMS key rule to v1 bodies.
+17. **Safe to send is a setting.** `notification.processBlockchainTransaction` only fires once the institution's
+    `statusToProcessBlockchain` setting is set ([Send § 4](send.md#4-wait-for-the-safe-to-send-signal)); without it,
+    wait for `ACCEPTED`. `ACK` only proves the address belongs to the beneficiary institution.
+18. **The deprecated `txnotification` callback is unsigned.** It posts the raw transaction with no signature; treat
+    it as a hint and re-read ([Webhooks](webhooks.md)).
 
 ## Unverified facts
 
-- **Token URL.** Kept in a secret; `https://auth.notabene.id/oauth/token` is inferred from the production Auth0 issuer
-  (`https://auth.notabene.id/`; QA `https://auth.notabene.dev/`).
-- **Integrator audience.** Only Notabene's privileged node-tier audience (`https://node.api.notabene.id`,
-  `https://node.api-qa.eu.notabene.dev`, `https://node.api.notabene.dev` for test; not for integrators) and a test
-  harness using the API base URL appear. The staging config notes a separate plain API audience without naming it.
-  Presume the API base URL (e.g. `https://api.notabene.id`); confirm with Notabene.
-- **Webhook signing secret.** How an institution gets its Svix secret, and the envelope's `version` value, aren't shown.
-- **Unexercised endpoints.** `/tx/receive`, `/tx/updateTR`, `NOT_READY`, `WAITING_FOR_INFORMATION`, and the
-  `processBlockchainTransaction` / `haltBlockchainTransaction` events are described from types and comments only.
-- **Address query webhook.** The request Notabene sends to your URL isn't modelled.
+- **Token lifetime.** It is set in the identity provider, not in the v1 service: read `expires_in` rather than
+  assuming 24 hours.
+- **Unexercised endpoints.** `/tx/receive` (internal; it sets `WAITING_FOR_TR`) and `/tx/updateTR` are described from
+  types only.
 - **US region.** No separate US v1 base URL appears in the config.

@@ -16,7 +16,7 @@ Generic mechanics are in the main guide; this file only covers what differs for 
 When your customer adds you as their agent you: provision a wallet for them, determine your side from the agent chain,
 confirm address ownership, settle on-chain when authorized, and report settlement.
 
-## Table of Contents
+## Contents
 
 - [Wrapping Transfers for Your Customers](#wrapping-transfers-for-your-customers)
 - [Webhook Events](#webhook-events)
@@ -72,7 +72,7 @@ API, so your customers comply without integrating Notabene directly. When a cust
 | Event | When | What to do |
 |---|---|---|
 | `notification.transferAgentAdded` | You are added as an agent | Provision wallet, determine role |
-| `notification.transferCreated` | A transfer involving you is created | Same as `transferAgentAdded` (may arrive instead of or before it) |
+| `notification.transferCreated` | A transfer involving you is created | Same as `transferAgentAdded` (handle whichever arrives first) |
 | `tap.requireRelationshipConfirmationRequested` | Address ownership confirmation needed | Confirm only if the address is your client's |
 | `tap.requireAuthorizationRequested` | Authorization decision needed | Authorize or reject |
 | `notification.transferStatusChanged` → `AUTHORIZED` | All parties authorized | Originator side: settle on-chain |
@@ -84,20 +84,22 @@ Payloads: [webhooks.md](webhooks.md).
 
 ## Determining Your Role
 
-The transfer's `agents` array (GET response shape) is a chain of `{ agent: { "@id" }, for }` entries:
+The transfer's `agents` array (GET response shape) is a chain of `{ "@id", agent: { "@id" }, for }` entries:
 
 ```json
 {
   "agents": [
-    { "agent": { "@id": "did:web:your-service" }, "for": "did:web:client-vasp" },
-    { "agent": { "@id": "did:web:client-vasp" }, "for": "mailto:originator@example.com" }
+    { "@id": "<transfer-agent-uuid>", "agent": { "@id": "did:web:your-service" }, "for": "did:web:client-vasp" },
+    { "@id": "<transfer-agent-uuid>", "agent": { "@id": "did:web:client-vasp" },
+      "for": "mailto:originator@example.com" }
   ],
   "originator": { "@id": "mailto:originator@example.com" },
   "beneficiary": { "@id": "mailto:beneficiary@example.com" }
 }
 ```
 
-1. Build a map `agent["@id"] → for`.
+1. Build a map `agents[i].agent["@id"] → agents[i].for`. The top-level `agents[i]["@id"]` is the TransferAgent's
+   own UUID, not a DID.
 2. Follow it from your own DID: `you → for → for → ...`
 3. Reaching `originator["@id"]` → **originator side** (you send). Reaching `beneficiary["@id"]` → **beneficiary side**
    (you receive).
@@ -137,7 +139,9 @@ addresses also satisfy most relationship confirmations automatically.
 
 1. **Provision** a wallet for the client agent DID if none exists; fund it (faucet on testnet) or ensure balance.
 2. **Pre-register** addresses ([above](#pre-registering-addresses-with-custodian)).
-3. **Authorize** with an empty body: `POST /entities/{entityDID}/tx/{transferId}/authorize` `{}`.
+3. **Authorize**: `POST /entities/{entityDID}/tx/{transferId}/authorize` with `{}` (the only body fields are the
+   optional `settlementAddress` and `memoTag`, used on the beneficiary side; anything else, such as an asset, is
+   ignored).
 4. **Wait for the transfer-level `AUTHORIZED`** (`notification.transferStatusChanged`), meaning all parties including
    your client's compliance team approved.
 5. **Settle:** read `settlementAddress` (CAIP-10, e.g. `eip155:1:0xRecipient`), `asset` (CAIP-19, e.g. USDC
@@ -152,9 +156,12 @@ addresses also satisfy most relationship confirmations automatically.
 1. **Provision** a wallet for the client agent DID.
 2. **Pre-register** receiving addresses with `custodian`.
 3. **Confirm address ownership** on `tap.requireRelationshipConfirmationRequested`:
-   `PATCH /entities/{entityDID}/relationships?from={addressDID}&to={customerDID}` with `{}` (the payload's
-   `confirmCallbackUrl`). If the address isn't your client's, don't confirm; the transfer is handled elsewhere.
-4. **Authorize** with `{}`.
+   `PATCH /entities/{entityDID}/relationships?from={addressDID}&to={targetDID}` with `{}` (the payload's
+   `confirmCallbackUrl`; its DIDs are unencoded, so URL-encode them). If the address isn't your client's, don't
+   confirm; the transfer is handled elsewhere.
+4. **Authorize**, giving the client's receiving address when the originator does not know it yet:
+   `{ "settlementAddress": "eip155:1:0xClientWalletAddress" }` (CAIP-10 or `payto://` URI; optional `memoTag`).
+   `{}` is also valid.
 5. **Reconcile** each on-chain deposit with `GET .../tx/match` ([guide](guide-travel-rule-api.md#4-reconcile-received-transfers)).
    If nothing matches, create the transfer with **yourself as the `VASP` agent `for` the client VASP** and the client
    as beneficiary:
@@ -168,7 +175,7 @@ addresses also satisfy most relationship confirmations automatically.
   "amount": "100.00",
   "agents": [{ "@id": "did:web:your-service.example.com", "role": "VASP", "for": "did:web:client-vasp-did",
                "policies": [{ "@type": "REQUIRE_AUTHORIZATION" }] }],
-  "settlementId": "0xTransactionHash"
+  "settlementId": "eip155:1:tx/0xTransactionHash"
 }
 ```
 
@@ -188,7 +195,9 @@ From `GET /entities/{entityDID}/tx/{transferId}`:
     "asset": "eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
     "amount": "100.00",
     "settlementAddress": "eip155:1:0xRecipient",
-    "agents": [{ "agent": { "@id": "did:web:..." }, "for": "did:web:...", "role": "Custodian" }],
+    "settlementId": null,
+    "agents": [{ "@id": "<transfer-agent-uuid>", "agent": { "@id": "did:web:..." }, "for": "did:web:...",
+                 "role": "Custodian", "status": "AUTHORIZED" }],
     "originator": { "@id": "mailto:..." },
     "beneficiary": { "@id": "mailto:..." }
   }
@@ -197,8 +206,9 @@ From `GET /entities/{entityDID}/tx/{transferId}`:
 
 - `amount`: decimal string in whole token units (`"100.00"` = 100 USDC); convert to base units with the token's
   decimals when building the on-chain transaction
-- `asset`: CAIP-19; `settlementAddress`: CAIP-10 destination; `memoTag`: destination tag where the chain needs one
-- `agents`: the chain for role determination
+- `asset`: CAIP-19; `settlementAddress`: CAIP-10 destination, set once the beneficiary side provides it; `memoTag`:
+  destination tag where the chain needs one
+- `agents`: the chain for role determination (use `agent["@id"]` and `for`)
 - Full schema: [api-reference.md#transfer](api-reference.md#transfer)
 
 ---
@@ -225,9 +235,9 @@ function claimForSettlement(transferId):
 
 ## Common Pitfalls
 
-1. **Sending settlement details when authorizing.** The authorize body accepts optional `settlementAddress` and
-   `memoTag` ([api-reference](api-reference.md#post-entitiesentitydidtxtransferidauthorize)); a wallet service acting
-   as an agent sends `{}`.
+1. **Putting the wrong fields in the authorize body.** It accepts only the optional `settlementAddress` and `memoTag`
+   ([api-reference](api-reference.md#post-entitiesentitydidtxtransferidauthorize)); `{}` is valid. Other fields
+   (asset, amount) are ignored, so they do not change the transfer.
 2. **Settling on a per-agent signal.** `notification.transferAgentStatusChanged` fires when one agent authorizes; it is
    not enough. Wait for `notification.transferStatusChanged` → `AUTHORIZED`.
 3. **Non-idempotent handlers.** Duplicate deliveries cause duplicate records, duplicate on-chain transfers or nonce

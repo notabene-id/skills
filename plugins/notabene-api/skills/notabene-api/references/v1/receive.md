@@ -23,7 +23,9 @@ Statuses and the verb table are in [Getting started](getting-started.md); pitfal
 
 ## Answering a transaction
 
-1. **Receive** `notification.transactionUpdated` at `SENT`. The webhook copy may omit PII; read `/tx/info`.
+1. **Receive** `notification.transactionUpdated` at `SENT`. The webhook copy may omit PII; read `/tx/info`. You only
+   see a transaction once the originator has sent it; `GET /tx/list?vaspDID=<you>&txDirection=incoming` lists them,
+   and `txGroup=INBOX` the ones waiting on you.
 2. **Confirm** with `POST /tx/confirm?id=<id>` (no body): `SENT → ACK`, asserting your institution controls
    `transactionBlockchainInfo.destination`. Confirm is not accept; send it only after checking the address is your
    customer's. An autoConfirm rule does it for addresses in your address book.
@@ -32,9 +34,9 @@ Statuses and the verb table are in [Getting started](getting-started.md); pitfal
 4. **Decide** (each verb returns the updated transaction):
    - `POST /tx/accept?id=<id>` (no body), from `ACK` only. The status read can lag the confirm by seconds; retry a
      refused accept briefly.
-   - `POST /tx/decline` (also legal from `SENT`, `SAVED`, `INCOMPLETE`), or `POST /tx/notReady` (can't decide yet →
-     `NOT_READY`), with `{ "id", "reason" }`.
+   - `POST /tx/decline` (also legal from `SENT`, `SAVED`, `INCOMPLETE`) with `{ "id", "reason" }`.
 5. **Alternatives at `SENT` only:**
+   - `POST /tx/notReady` with `{ "id", "reason" }` → `NOT_READY` (you cannot answer yet).
    - `POST /tx/reject` → `REJECTED`, body `{ "id": "6f1c…-uuid", "reason": "unknown destination address" }`.
    - `POST /tx/redirect?id=<id>&to=<did>` hands it to another institution: status stays `SENT`, only
      `beneficiaryVASPdid` changes. Confirmed at `SENT`; one source also allows `NEW`, `MISSING_BENEFICIARY_DATA`,
@@ -88,10 +90,13 @@ rather than `""`; must match `^[^\s]+$`), `origin`, `originatorVASPdid` (not in 
 `matchingParameters` (match on `transactionAmount`, `transactionAsset`, `origin`). `id` is for Notabene-internal
 callers only; omit it.
 
-- **Matches an existing transaction** (e.g. `txHash` + `destination` + `beneficiaryVASPdid`): v1 links to it and
-  auto-confirms it to `SENT`/`ACK`; it belongs to whichever flow created it.
-- **No match:** a new transaction at `INCOMPLETE`. Notabene resolves the originator from `origin` when it can; without
-  that or `originatorVASPdid`, it may have no originator and stay invisible to the institution that owes the data.
+- **Matches an existing transaction** (by `txHash`, `destination` and `beneficiaryVASPdid`, plus any
+  `matchingParameters`): v1 links to it and auto-confirms it (`SENT` → `ACK`); it belongs to whichever flow created
+  it.
+- **No match:** a new transaction at `INCOMPLETE` (or `SAVED` for below-threshold and self-hosted deposits). Notabene
+  resolves the originator from `origin` when it can; without that or `originatorVASPdid`, it may have no originator
+  and stay invisible to the institution that owes the data. If the originator later reports the same hash and
+  destination on a transaction of its own, Notabene merges yours into it and yours becomes `MERGED`.
 
 Then, depending on who sends `/tx/update` first (the resulting status is keyed on the caller; party data is
 accepted only at `INCOMPLETE` or `MISSING_BENEFICIARY_DATA`):
@@ -109,7 +114,10 @@ The `txHash` **is** the settlement; a notify transaction has no further settleme
 
 ## Address registration and ownership
 
-Registered addresses let Notabene route incoming transfers to you and let autoConfirm fire.
+Registered addresses let Notabene route incoming transfers to you and let autoConfirm fire. Auto-confirm also asks
+your address-query webhook (below), and is governed by the institution setting `autoconfirm`
+(`PUT /tf/vasps/{vaspDID}/settings`): when it is `false`, an address-book match is not enough to auto-confirm, while
+an `owns: true` from the webhook still is.
 
 `POST /address/registerCustomer`:
 
@@ -126,5 +134,12 @@ Registered addresses let Notabene route incoming transfers to you and let autoCo
 | `GET /v1/addresses?vasp_did=&source=ADDRESS_GRAPH[&source_type=INTERNAL\|EXTERNAL&page=&per_page=]` | `{ pagination: { page, per_page, total }, metadata: { source }, data: [{ address, owner_vasp_did, customer_did, customer_ref }] }` |
 | `DELETE /v1/addresses?vasp_did=&addresses=<a1>,<a2>` | `202 { message }` |
 | `GET /address/upload/{vaspDID}` | Presigned `{ uploadUrl, uploadFields[] }`: POST your CSV as multipart with every upload field verbatim. |
-| `POST /integrations/{vaspDID}/address-query-webhook` | Body `{ "url", "params": "?k=v" }` (leading `?`) registers a URL Notabene calls to ask whether an address is yours; response has a `secret`. |
+| `POST /integrations/{vaspDID}/address-query-webhook` | Body `{ "url", "params": "?k=v" }` (leading `?`) registers a URL Notabene calls to ask whether an address is yours; response `{ "secret" }`. |
 | `DELETE /integrations/{vaspDID}/address-query-webhook` | No body; returns `{ isDeleted, message }`. |
+
+### Address-query webhook
+
+Notabene calls your URL as `GET <url><params>&address=…&asset=…` with a 5-second timeout and the header
+`X-Notabene-Signature: base64(HMAC-SHA1(secret, "GET" + fullUrl))`; verify it with the `secret` from registration.
+Answer `200` with `{ "owns": true | false, "beneficiaryInfo": … }`, or `404` for unknown. `owns: true` auto-confirms
+the transfer (`SENT` → `ACK`); `owns: false` auto-rejects it.

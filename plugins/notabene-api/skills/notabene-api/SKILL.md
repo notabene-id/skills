@@ -21,11 +21,11 @@ Infer it from the codebase, config or credentials before asking. Ask only when n
 |---|---|---|---|
 | Base URL | `api.notabene.id` | `api.eu1.notabene.id`, `api.us1.notabene.id` | `sandbox.notabene.id`, `eu-a.notabene.id`, `us-a.notabene.id` |
 | Paths | `/tx/create`, `/tx/info`, `/tx/update` | `/entities/{entityDID}/tx` | `/api/v1/transfers`, `/api/v1/customers` |
-| Institution id | `vaspDID` (often `did:ethr:…`) | `entityDID` in the path | The token identifies it (a few routes such as `delegate-token` still take `entityDID`, under `/api/v1`) |
-| Statuses | `NEW`, `SENT`, `ACK`, `ACCEPTED`, … | `OUTGOING`/`INCOMING`, `AUTHORIZED`, `SETTLED`, … | `Active`, `ReadyToSettle`, `Settled`, … |
-| Webhooks | `notification.transactionUpdated` | `notification.*`, `tap.*` | `transfer.*.v3`, `requirements.*.v3`, `relationship.*.v3` |
+| Institution id | `vaspDID`, usually `did:ethr:…` | `entityDID` in the path, usually `did:web:…` | Usually `did:web:…`; the token identifies it (a few routes such as `delegate-token` still take `entityDID`, under `/api/v1`) |
+| Statuses | `NEW`, `SENT`, `ACK`, `ACCEPTED`, … | `AWAITING-YOURS`, `AWAITING-COUNTERPARTY`, `AUTHORIZED`, `SETTLED`, … | `Active`, `ReadyToSettle`, `Settled`, … |
+| Webhooks | `notification.transactionUpdated`, `notification.processBlockchainTransaction` | `notification.*`, `tap.*` | `transfer.*.v3`, `requirements.*.v3`, `relationship.*.v3` |
 | Amounts | Integer base units, asset symbols | Decimal strings, CAIP-19 | Whole-unit decimal strings, CAIP-19 |
-| Broadcast after | `ACCEPTED`, or `SAVED` (not sent: below threshold, self-hosted or internal) | `AUTHORIZED` | `ReadyToSettle` |
+| Broadcast after | `notification.processBlockchainTransaction`, fired at the institution's `statusToProcessBlockchain` setting (usually `ACCEPTED`). Without it: `ACCEPTED`, or `SAVED` (not sent: below threshold, self-hosted or internal) | `AUTHORIZED` | `ReadyToSettle` |
 | Read | [`references/v1/README.md`](references/v1/README.md) | [`references/v2/README.md`](references/v2/README.md) | [`references/v2.1/README.md`](references/v2.1/README.md) |
 
 v2.1's paths start with `/api/v1`. That is the v2.1 platform, not the v1 API: any `/api/v1/…` path means v2.1.
@@ -38,7 +38,10 @@ version. To migrate, read both versions' READMEs and map every call, status and 
 
 ## Rules for every version
 
-- Never broadcast a withdrawal before that version's "broadcast after" status, then report the transaction hash back.
+- Never broadcast a withdrawal before that version's "broadcast after" signal (v1: never after
+  `notification.haltBlockchainTransaction`), then report the transaction hash back.
+- IVMS101 keys differ: a natural person's name type is `nameIdentifierType` in v1 and
+  `naturalPersonNameIdentifierType` in v2 and v2.1.
 - Webhooks arrive at least once and out of order: verify the Svix signature, make handlers idempotent, and re-read
   the transfer from the API instead of trusting the payload.
 - Keep the API token server-side; front ends use per-customer tokens. Ask the user for secrets; never invent, print

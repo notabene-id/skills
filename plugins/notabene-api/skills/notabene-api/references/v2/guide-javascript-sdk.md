@@ -1,14 +1,13 @@
 # Notabene JavaScript SDK Guide
 
-The Notabene JavaScript SDK (`@notabene/javascript-sdk`) provides embeddable UI components — collectively called **SafeConnect** — that handle Travel Rule data collection in your frontend. They are rendered in an iframe pointing to `https://embedded.notabene.id`; the SDK handles iframe setup, configuration and two-way communication, so you never touch the iframe directly.
+The Notabene JavaScript SDK (`@notabene/javascript-sdk`) provides embeddable UI components — collectively called **SafeConnect** — that handle Travel Rule data collection in your frontend. The components are served from `https://connect.notabene.id` (the SDK's default `uxUrl`) and rendered in an iframe, modal or popup that the SDK manages; you never touch the iframe directly.
 
 ## Contents
 
 - [Components at a glance](#components-at-a-glance)
 - [Installation](#installation)
-- [Authentication: Customer Token](#authentication-customer-token)
+- [Authentication: Customer (delegate) Token](#authentication-customer-delegate-token)
 - [SDK Initialization](#sdk-initialization)
-- [Locale support](#locale-support)
 - [Withdrawal Assist](#withdrawal-assist)
 - [Deposit Request](#deposit-request)
 - [Connect Wallet (Self-Hosted Wallet Verification)](#connect-wallet-self-hosted-wallet-verification)
@@ -25,12 +24,12 @@ Source: [gitlab.com/notabene/open-source/javascript-sdk](https://gitlab.com/nota
 
 ## Components at a glance
 
-| Component | When to use |
-|---|---|
-| **Withdrawal Assist** | On your withdrawal screen, before the transfer is created — collects beneficiary info and/or counterparty identification from your customer |
-| **Deposit Request** | On your deposit screen — enriches your deposit address/QR code so the sender's VASP can pre-fill transfer information for smoother, compliant deposits |
-| **Connect Wallet** | When you need to verify that a customer controls a self-hosted (unhosted) wallet |
-| **Deposit Assist** | Post-deposit, when Travel Rule data arrived incomplete — collects missing originator info from your depositing customer |
+| Component | Factory | When to use |
+|---|---|---|
+| **Withdrawal Assist** | `createWithdrawalAssist` | On your withdrawal screen, before the transfer is created — collects beneficiary info and/or counterparty identification from your customer |
+| **Deposit Request** | `createDepositRequest` | On your deposit screen — enriches your deposit address/QR code so the sender's VASP can pre-fill transfer information for smoother, compliant deposits |
+| **Connect Wallet** | `createConnectWallet` | When you need to verify that a customer controls a self-hosted (unhosted) wallet |
+| **Deposit Assist** | `createDepositAssist` | Post-deposit, when Travel Rule data arrived incomplete — collects missing originator info from your depositing customer |
 
 ---
 
@@ -41,31 +40,37 @@ Source: [gitlab.com/notabene/open-source/javascript-sdk](https://gitlab.com/nota
 
 ---
 
-## Authentication: Customer Token
+## Authentication: Customer (delegate) Token
 
-**Never** use your API access token ([how to get one](guide-travel-rule-api.md#authentication)) in the frontend. The SDK requires a short-lived **customer token** scoped to a specific user, generated server-side.
-
-### Generate on your backend
+**Never** use your API access token ([how to get one](guide-travel-rule-api.md#authentication)) in the frontend. The SDK requires a short-lived token scoped to one customer, generated server-side. In v2 this is the **delegate token**:
 
 ```
-POST /entities/{entityDID}/delegateToken
+POST https://api.eu1.notabene.id/entities/{entityDID}/delegateToken      # US: https://api.us1.notabene.id
 Authorization: Bearer <your_api_access_token>
 Content-Type: application/json
 ```
 
 ```json
 {
-  "delegateId": "unique-stable-customer-id",
-  "entityDID": "did:web:your-vasp.com"
+  "entityDID": "did:web:your-vasp.com",
+  "delegateId": "urn:uuid:7d1c2f6e-0b0e-4a8e-9a49-3f1a0c7e2b11"
 }
 ```
 
-`entityDID` must match the one in the path.
+`entityDID` must equal the path's `entityDID`. `delegateId` (1–255 chars) is your stable id for the customer; use an IRI (e.g. `urn:uuid:…`), which some deployments enforce.
 
-**Response:** `{ "access_token": "eyJhbGc...", "delegateDid": "did:…", "token_type": "Bearer" }`. Pass
-`access_token` to the SDK as `authToken`.
+**Response** `200`:
+```json
+{
+  "access_token": "eyJhbGc...",
+  "token_type": "Bearer",
+  "delegateDid": "did:key:z6Mk..."
+}
+```
 
-> **Important:** `delegateId` must be unique and stable per customer. Reusing the same id across different customers breaks ownership proof reusability. Generate the token server-side immediately before rendering the component — do not cache it long-term.
+Pass `access_token` to the SDK as `authToken`. The JWT is valid for **1 hour**; its `sub` is `delegateDid`.
+
+> **Important:** `delegateId` must be unique and stable per customer: the same `delegateId` always maps to the same `delegateDid`, which is what makes ownership proofs reusable. Reusing one id across customers breaks that. Generate the token right before rendering the component — do not cache it.
 
 Reference: [devx.notabene.id/reference/createdelegatetoken](https://devx.notabene.id/reference/createdelegatetoken)
 
@@ -77,37 +82,30 @@ Reference: [devx.notabene.id/reference/createdelegatetoken](https://devx.notaben
 import Notabene from '@notabene/javascript-sdk';
 
 const notabene = new Notabene({
-  nodeUrl: 'https://api.eu1.notabene.id',  // your region's API host (EU here; US: api.us1)
-  authToken: customerToken,                 // access_token from delegateToken — NOT your API access token
+  nodeUrl: 'https://api.eu1.notabene.id',  // the API host you call (US: https://api.us1.notabene.id)
+  authToken: customerToken,                 // delegate token from your backend — NOT your API access token
+  locale: 'de',                             // optional, default 'en'
+  // uxUrl: 'https://connect.notabene.id',  // optional, this is the default
+  // theme: { ... },                        // optional
 });
 ```
 
-The SDK uses `nodeUrl` to determine which environment the embedded UI connects to (`production` vs `development`). For production use your region's host: `https://api.eu1.notabene.id` (EU) or `https://api.us1.notabene.id` (US).
+Use the same `nodeUrl` you use for the Notabene API. The embedded UI only accepts allow-listed API hosts.
 
----
-
-## Locale support
-
-Pass a BCP 47 locale code to render the component in the user's language. The component validates the locale and falls back to `"en"` if unsupported.
-
-```javascript
-const withdrawal = notabene.createWithdrawalAssist(data, {
-  locale: 'de',  // e.g. 'en', 'de', 'fr', 'es', 'ja', etc.
-});
-```
+The locale is set once on the constructor (not per component); unsupported locales fall back to `en`.
 
 ---
 
 ## Withdrawal Assist
 
-Use this on your withdrawal screen **before** submitting the transfer to the Travel Rule API. The component handles VASP discovery, PII collection, and agent construction — the `txCreate` output is ready to POST directly to the transfer creation endpoint.
+Use this on your withdrawal screen **before** submitting the transfer to the Travel Rule API. The component handles VASP discovery, PII collection, and ownership proofs.
 
 ```javascript
 const withdrawal = notabene.createWithdrawalAssist({
   asset: 'eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // CAIP-19 or shorthand e.g. 'USDC'
   destination: '0xBeneficiaryAddress',
   amountDecimal: 100.0,
-  assetPrice: 1.00,        // optional — overrides CoinGecko/CoinMarketCap; required for custom/unlisted assets
+  assetPrice: { price: 1.0, currency: 'USD' }, // optional; needed for custom/unlisted assets
   customer: {
     name: 'Jane Smith',    // optional, pre-fills originator name
     email: 'jane@example.com',
@@ -115,28 +113,45 @@ const withdrawal = notabene.createWithdrawalAssist({
 });
 ```
 
+Signature: `createWithdrawalAssist(value, options?, callbacks?)`. `options` are `TransactionOptions` (e.g. `proofs`, `counterpartyAssist`, `fields`, `vasps`); `callbacks` is `{ callback?, redirectUri? }` for server callbacks / redirects on completion.
+
 **Render options (choose one):**
 ```javascript
-// Option A: Inline iFrame (mount to a DOM element)
+// Option A: Inline iFrame (mount to a DOM element, CSS selector)
 withdrawal.mount('#nb-withdrawal');
-const { valid, value, txCreate } = await withdrawal.completion();
+const response = await withdrawal.completion();
 
 // Option B: Modal dialog
-const { valid, value, txCreate } = await withdrawal.openModal();
+const response = await withdrawal.openModal();
 
-// Option C: Popup window
-const { valid, value, txCreate } = await withdrawal.popup();
+// Option C: Popup window (needed by many self-hosted wallets that refuse iframes)
+const response = await withdrawal.popup();
 ```
 
+The promise rejects if the user cancels or the component errors. Event style also works: `withdrawal.on('complete' | 'error' | 'warning' | 'ready', cb)` returns an unsubscribe function, and `withdrawal.update(value, options?)` pushes new input.
+
 **Handling the response:**
+
+`response.txCreate` is a **v1** `tx/create` payload (`transactionAsset`, `originatorVASPdid`, …), not a v2 body. For v2, convert the response with the SDK's transformer:
+
 ```javascript
-if (valid) {
-  // txCreate is a fully formed transfer payload ready to POST to /entities/{entityDID}/tx
-  await yourBackend.createTransfer(txCreate);
+import { componentResponseToTxRequests } from '@notabene/javascript-sdk';
+
+if (response.valid) {
+  const { createTx, ivms101, confirmRelationship } = componentResponseToTxRequests(
+    response,
+    customerToken,                          // the delegate token; its sub becomes originator @id
+    { referenceId: myPersistedRef, originator: customerIvms }, // your KYC IVMS101 for the customer
+  );
+  // createTx       -> POST /entities/{entityDID}/tx
+  // ivms101        -> POST /entities/{entityDID}/tx/{id}/append
+  // confirmRelationship (if a proof was collected) -> PATCH /entities/{entityDID}/relationships
 } else {
   // Block the withdrawal and prompt the user to retry
 }
 ```
+
+Pass your own `referenceId` (`ref`); otherwise the transformer uses the response's `transactionId` or a random string, which breaks idempotent retries. `componentResponseToTxCreateRequest` and `componentResponseToIVMS101` produce the two bodies individually.
 
 ---
 
@@ -147,13 +162,12 @@ Use this on your **deposit screen** to generate an enriched deposit address or Q
 ```javascript
 const depositRequest = notabene.createDepositRequest({
   asset: 'USDC',
-  destination: '0xYourDepositAddress',
-  amountDecimal: 100.0,   // optional
+  destination: '0xYourDepositAddress',  // address or CAIP-10
+  amountDecimal: 100.0,
   customer: {
     name: 'Jane Smith',
-    email: 'jane@example.com',
   },
-});
+}, { showQrCode: true });               // options; showQrCode defaults to true
 
 depositRequest.mount('#nb-deposit-request');
 ```
@@ -169,13 +183,14 @@ Use when your compliance policy requires proof that a customer controls a self-h
 ```javascript
 const connectWallet = notabene.createConnectWallet({
   asset: 'ETH',
-  address: '0xUnhostedWalletAddress',
+  address: '0xUnhostedWalletAddress',  // optional; address or CAIP-10. Omit to let the user pick
 });
 
 const { valid, proof } = await connectWallet.openModal();
 
 if (valid) {
-  // proof is a signed attestation — attach to the transfer or store for audit
+  // proof.address is the proved account (CAIP-10). Store it with the relationship
+  // (PATCH /entities/{entityDID}/relationships with the proof) or keep it for audit.
 }
 ```
 
@@ -192,7 +207,7 @@ const deposit = notabene.createDepositAssist({
   asset: 'USDC',
   source: '0xOriginatorAddress',
   amountDecimal: 100.0,
-  assetPrice: 1.00,        // optional
+  transactionId: transferId,   // optional: the Notabene transfer id, echoed back in the response
   customer: {
     name: 'John Smith',
     email: 'john@example.com',
@@ -201,8 +216,10 @@ const deposit = notabene.createDepositAssist({
 
 // Render the same way as Withdrawal Assist
 deposit.mount('#nb-deposit');
-const { valid, value } = await deposit.completion();
+const response = await deposit.completion();
 ```
+
+Deposits return `txUpdate` (not `txCreate`). `componentResponseToTxRequests(response, customerToken, { beneficiary: customerIvms })` handles both: for deposits the token's `sub` becomes the beneficiary `@id`.
 
 Further reading: [devx.notabene.id/docs/incomplete-how-to-collect-data](https://devx.notabene.id/docs/incomplete-how-to-collect-data)
 
@@ -210,36 +227,46 @@ Further reading: [devx.notabene.id/docs/incomplete-how-to-collect-data](https://
 
 ## Component Response Object
 
-All components return the same shape:
+Transaction components resolve with a `TransactionResponse`:
 
 | Field | Description |
 |---|---|
 | `valid` | `true` if the component collected all required data successfully |
-| `value` | Raw collected data (IVMS101 fields and counterparty info) |
-| `txCreate` | Ready-to-submit transfer payload for `POST /entities/{entityDID}/tx` (Withdrawal Assist only) |
-| `ivms101` | Structured IVMS101 object if available |
-| `proof` | Self-hosted wallet ownership proof (Connect Wallet only) |
+| `status` | `empty`, `verify`, `pending`, `verified` or `banned` |
+| `errors` | `[{ attribute, message }]` validation errors |
+| `requestID` | Echoes the request's `requestId` |
+| `value` | The completed input (withdrawal / deposit data incl. counterparty) |
+| `ivms101` | IVMS101 object for the counterparty data collected |
+| `proof` | Self-hosted wallet ownership proof, when one was collected |
+| `txCreate` | v1 `tx/create` payload (withdrawals). Convert with the transformer for v2 |
+| `txUpdate` | v1 payload for deposits. Convert with the transformer for v2 |
 
 ---
 
 ## Counterparty Assist (built-in feature)
 
-Both Withdrawal Assist and Deposit Assist have an optional **Counterparty Assist** mode. When enabled, it generates a secure link you can share with the counterparty so *they* provide their own Travel Rule data directly — offloading data collection to the person best positioned to provide it.
+Both Withdrawal Assist and Deposit Assist have an optional **Counterparty Assist** mode, off by default. When enabled, it generates a secure link you can share with the counterparty so *they* provide their own Travel Rule data directly (or, for `self`, so the customer can sign a wallet proof on another device).
 
 ```javascript
+import { PersonType } from '@notabene/javascript-sdk';
+
 const withdrawal = notabene.createWithdrawalAssist(data, {
-  counterpartyAssist: true,
+  counterpartyAssist: { counterpartyTypes: [PersonType.NATURAL, PersonType.LEGAL, PersonType.SELF] },
+  // or `true` / `false`
 });
 ```
+
+For third-party counterparties the response carries a `refreshSource` (`{ url, key, id }`) to fetch the encrypted data once the counterparty completes.
 
 ---
 
 ## Integration checklist
 
-- [ ] Customer token generated server-side per user (`delegateToken`) with a stable `delegateId`
-- [ ] SDK initialized with `nodeUrl` pointing to correct environment
+- [ ] Delegate token generated server-side per customer with a stable `delegateId`, right before rendering
+- [ ] SDK initialized with `nodeUrl` set to the API host you call
 - [ ] Component rendered **before** the transfer is submitted to the API
-- [ ] `txCreate` from Withdrawal Assist used as the body for `POST /entities/{entityDID}/tx`
+- [ ] Component response converted with `componentResponseToTxRequests` (not `txCreate` posted as-is) and a persisted `referenceId`
+- [ ] PII appended and any wallet `proof` stored on the relationship
 - [ ] Deposit Request component added to deposit screen to improve incoming data quality
-- [ ] `valid: false` handled gracefully (block action, prompt retry)
-- [ ] Locale set to match your user's language where applicable
+- [ ] `valid: false` and cancellation (rejected promise) handled gracefully (block action, prompt retry)
+- [ ] `locale` set on the constructor to match your user's language where applicable
