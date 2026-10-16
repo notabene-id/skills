@@ -76,7 +76,9 @@ Notabene uses [Svix](https://svix.com/) for webhook delivery with automatic retr
 
 ### Configure Endpoints
 
-Set up webhook endpoints in the Notabene dashboard under Settings. Subscribe to the events relevant to your integration (see [Webhook Event Reference](#webhook-event-reference)).
+Enable webhooks for your entity with `PUT /entities/{entityDID}/webhook`, then add endpoints and subscribe to events in
+the Svix portal (`GET /entities/{entityDID}/webhook?generate_portal_url=true` returns `svixPortalUrl`). No webhooks are
+sent until this is done. See [webhooks.md](./webhooks.md#setup).
 
 ### Verify Signatures
 
@@ -106,7 +108,7 @@ All Notabene webhooks use the same envelope format:
   "payload": {
     "id": "423ae44a-...",
     "for": "did:web:your-domain.com",
-    "fromStatus": "PENDING",
+    "fromStatus": "AWAITING-COUNTERPARTY",
     "toStatus": "AUTHORIZED"
   },
   "version": "1.0.0"
@@ -283,15 +285,15 @@ After creation, the system automatically:
 
 | Field         | Validation                                    | Description                                           |
 | ------------- | --------------------------------------------- | ----------------------------------------------------- |
-| `originator`  | `@id`: 3–255 chars, valid DID                 | Your customer's DID                                   |
-| `beneficiary` | `@id`: 3–255 chars, valid DID                 | The recipient's DID                                   |
-| `asset`       | CAIP-19 pattern or 2–20 char abbreviation     | CAIP-19 format or Notabene abbreviation (e.g., `BTC`) |
+| `originator`  | `@id`: 3–255 chars, IRI (`mailto:`, `did:`…)  | Your customer's identifier                            |
+| `beneficiary` | `@id`: 3–255 chars, IRI (`mailto:`, `did:`…)  | The recipient's identifier                            |
+| `asset`       | CAIP-19, 2–20 char uppercase symbol, or DTI   | CAIP-19 format or symbol (e.g., `BTC`)                |
 | `amount`      | Pattern: `^\d+(\.\d+)?$` (numeric string)     | Transfer amount as a string                           |
 | `agents`      | At least 1 agent required                     | Chain of agents with roles and `for` relationships    |
-| `ref`         | 1–64 chars, pattern: `^[a-zA-Z0-9_-]{1,64}$` | Idempotency key for deduplication                     |
+| `ref`         | 1–255 chars, `^[a-zA-Z0-9_-]{1,255}$`         | Unique per transfer; a reused `ref` returns `409`     |
 | `memoTag`     | 1–28 chars, printable ASCII only              | Optional memo/destination tag (e.g., XRP, XLM)        |
 
-> **Note on agent roles:** The valid agent role values are `VASP`, `Custodian`, `SettlementAddress`, `SourceAddress`, and `Gateway`. These differ from the underlying TAP protocol roles (`OriginatorVASP`, `BeneficiaryVASP`, etc. — see TAIP-5). The API maps these internally. Always use the Notabene role values shown in this guide when calling Notabene endpoints.
+> **Note on agent roles:** The valid agent role values are `VASP`, `Custodian`, `SettlementAddress`, `SourceAddress`, `Gateway`, and `Unknown` (the default). These differ from the underlying TAP protocol roles (`OriginatorVASP`, `BeneficiaryVASP`, etc. — see TAIP-5). The API maps these internally. Always use the Notabene role values shown in this guide when calling Notabene endpoints.
 
 ### 2. Provide PII When Requested
 
@@ -309,15 +311,21 @@ Listen for the **`tap.requirePresentationRequested`** webhook. This fires when t
     "beneficiaryAgentID": "did:web:counterparty-vasp.com",
     "originatorPresentationDefinition": "https://pd.notabene.id/ivms101/v2/US-3000.json",
     "beneficiaryPresentationDefinition": "https://pd.notabene.id/ivms101/v2/JP-0.json",
-    "callbackUrl": "/entity/<entityDID>/tx/<tx>/append"
-  }
+    "callbackUrl": "/entities/<entityDID>/transfers/<transferId>/append",
+    "policyId": "<policy-id>"
+  },
+  "version": "1.0.0"
 }
 ```
+
+POST the PII to the payload's `callbackUrl`. With Notabene-managed encryption it is the transfer's `append` path, shown
+below. With entity-managed encryption it is `/entities/<entityDID>/transfers/<transferId>/policies/<policyId>/presentation`
+instead (see [webhooks.md](./webhooks.md)). The `/transfers/` paths are aliases of `/tx/`.
 
 **Append PII (Notabene-managed encryption):**
 
 ```
-POST /entities/{entityDID}/transfers/{transferId}/append
+POST /entities/{entityDID}/tx/{transferId}/append
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
@@ -380,7 +388,7 @@ Content-Type: application/json
 }
 ```
 
-The `settlementId` is the on-chain transaction hash (maxLength: 255). CAIP-220 format recommended (e.g., `eip155:{chainId}:tx/{txHash}`).
+The `settlementId` is the on-chain transaction hash (maxLength: 255). CAIP-220 format recommended (e.g., `eip155:{chainId}:tx/{txHash}`). Optional `settlementIdIndex` (vout/log index) disambiguates multi-output transactions.
 
 ---
 
@@ -395,7 +403,7 @@ When a transfer arrives targeting one of your addresses, you must confirm owners
 **Option A: Pre-register addresses via the Relationships API (recommended)**
 
 ```
-POST /entities/{entityDID}/relationship
+POST /entities/{entityDID}/relationships
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
@@ -407,11 +415,13 @@ Content-Type: application/json
 }
 ```
 
-Pre-registered addresses are automatically confirmed when transfers arrive.
+A relationship that names your own `entityDID` as `from`, `to` or `custodian` is confirmed on creation, so
+transfers to pre-registered addresses do not wait for a confirmation.
 
 **Option B: Respond to the webhook**
 
-Listen for **`tap.requireRelationshipConfirmationRequested`** and POST to the `confirmCallbackUrl` in the payload to confirm ownership.
+Listen for **`tap.requireRelationshipConfirmationRequested`** and call `PATCH` on the `confirmCallbackUrl` in the
+payload (`/entities/{entityDID}/relationships?from=…&to=…`, DIDs unencoded: URL-encode them) to confirm ownership.
 
 ### 2. Verify Beneficiary Name
 
@@ -425,11 +435,12 @@ Authorization: Bearer <token>
 ```
 
 2. Extract the beneficiary name from the response at:
-   `beneficiary.beneficiaryPerson.naturalPerson.name.nameIdentifier`
+   `transfer.beneficiary.beneficiaryPerson[0].naturalPerson.name.nameIdentifier[0]` (or `legalPerson.name.nameIdentifier[0].legalPersonName`)
 
 3. Compare against your KYC records (fuzzy matching recommended, ~90% threshold).
 
-4. Confirm the checks:
+4. Confirm the checks your entity has configured. The webhook payload carries `confirmBeneficiaryCallbackUrl` and
+   `confirmInternalChecksCallbackUrl` only for the checks that exist on the transfer:
 
 ```
 POST /entities/{entityDID}/tx/{transferId}/checks/beneficiary-name-matching
@@ -441,7 +452,7 @@ POST /entities/{entityDID}/tx/{transferId}/checks/internal-checks
 Authorization: Bearer <token>
 ```
 
-Both checks must pass before the transfer can proceed to authorization.
+Each configured check must be completed before the transfer can proceed to authorization.
 
 If the name does not match, reject the transfer with reason `BENEFICIARY_NOT_FOUND`.
 
@@ -480,8 +491,9 @@ Authorization: Bearer <token>
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `settlement_id` | yes | On-chain transaction hash (e.g., `0xabc123...`) |
-| `settlement_address` | yes | Destination address that received funds |
+| `settlement_id` | yes | On-chain transaction hash, CAIP-220 (`eip155:1:tx/0x…`) or raw |
+| `settlement_address` | yes | Destination address that received funds (plain, CAIP-10 or `did:pkh`) |
+| `asset` | no | CAIP-19; needed only when no input carries the chain (all plain) |
 | `settlement_id_index` | no | Vout or log index (for UTXO chains or multi-transfer txs) |
 | `memo_tag` | no | Memo/tag for chains that use them (e.g., XRP, XLM) |
 | `direction` | no | `INCOMING` or `OUTGOING` |
@@ -514,7 +526,7 @@ Content-Type: application/json
       "policies": [{ "@type": "REQUIRE_AUTHORIZATION" }]
     }
   ],
-  "settlementId": "0xTransactionHash"
+  "settlementId": "eip155:1:tx/0xTransactionHash"
 }
 ```
 
@@ -528,12 +540,17 @@ This ensures the deposit enters Notabene's compliance workflow even when the ori
 
 | Status               | Description                                      |
 | -------------------- | ------------------------------------------------ |
-| `OUTGOING`           | New outgoing transfer created                    |
-| `INCOMING`           | New incoming transfer received                   |
+| `AWAITING-YOURS`     | Waiting on you (PII, address confirmation, proof of ownership, authorization) |
+| `AWAITING-COUNTERPARTY` | Waiting on the counterparty                   |
 | `AUTHORIZED`         | Transfer authorized by all required parties      |
 | `REJECTED`           | Transfer rejected                                |
+| `FLAGGED`            | Flagged for review                               |
 | `SETTLED`            | Transaction settled on-chain                     |
 | `REVERTED`           | Transaction reverted (terminal)                  |
+
+`OUTGOING` / `INCOMING` are deprecated statuses still found on older transfers. Revert, freeze and flag flows add
+`FLAGGED-SETTLEMENT`, `REVERT-REQUESTED`, `REVERT-AUTHORIZED`, `REVERT-REJECTED`, `REVERT-FLAGGED`, `FROZEN`, `CLEARED`
+(see [api-reference.md](./api-reference.md#transfer)).
 
 ---
 
@@ -550,7 +567,7 @@ This ensures the deposit enters Notabene's compliance workflow even when the ori
 
 | Event                                           | When                                    | Action Required |
 | ----------------------------------------------- | --------------------------------------- | --------------- |
-| `tap.requireRelationshipConfirmationRequested`  | Address ownership confirmation needed   | POST to `confirmCallbackUrl` |
+| `tap.requireRelationshipConfirmationRequested`  | Address ownership confirmation needed   | `PATCH` the `confirmCallbackUrl` |
 | `tap.requirePresentationSatisfied`              | PII has been received                   | Verify beneficiary name, complete checks |
 | `notification.transferStatusChanged`            | Transfer status changes                 | Update internal records |
 
@@ -561,8 +578,8 @@ This ensures the deposit enters Notabene's compliance workflow even when the ori
 | `notification.transferCreated`                     | Transfer created                         |
 | `notification.transferAgentAdded`                  | Agent added to transfer                  |
 | `notification.transferAgentReplaced`               | Agent replaced in transfer               |
+| `notification.transferAgentRemoved`                | Agent removed from transfer              |
 | `notification.transferAgentStatusChanged`          | Agent status updated                     |
-| `tap.requireAuthorizationSatisfied`                | All authorizations complete              |
+| `tap.requireAuthorizationSatisfied`                | An agent's authorization requirement is satisfied (per agent) |
 | `tap.requireRelationshipConfirmationSatisfied`     | Address ownership confirmed              |
-| `tap.policySatisfied`                              | Policy fully satisfied                   |
 | `tap.requirePresentationPartiallySatisfied`        | Partial PII received, more needed        |

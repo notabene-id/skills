@@ -73,12 +73,12 @@ Content-Type: application/x-www-form-urlencoded
 grant_type=client_credentials
 &client_id=YOUR_CLIENT_ID
 &client_secret=YOUR_CLIENT_SECRET
-&audience=https://api.notabene.dev
+&audience=https://api.eu1.notabene.id
 ```
 
 The token is valid for 24 hours. Cache and refresh it before expiry.
 
-**Base URL:** `https://api.notabene.dev` (or `https://api.eu1.notabene.id` for production)
+**Base URL:** `https://api.eu1.notabene.id` (test against a sandbox entity; `api.notabene.dev` is the v1 test host, not v2)
 
 ---
 
@@ -101,7 +101,7 @@ The event type is in `message`, the transfer ID is in `payload.id`.
 | Event | When it fires | What to do |
 |-------|---------------|------------|
 | `notification.transferAgentAdded` | You are added as an agent to a transfer | Provision wallet, determine role |
-| `notification.transferCreated` | A transfer is created involving you | Same as transferAgentAdded (may arrive instead of or before it) |
+| `notification.transferCreated` | A transfer is created involving you | Same as transferAgentAdded (handle whichever arrives first) |
 | `tap.requireRelationshipConfirmationRequested` | Address ownership confirmation needed | Confirm or deny that the address belongs to your client |
 | `tap.requireAuthorizationRequested` | Authorization decision needed | Review and authorize or reject the transfer |
 | `notification.transferStatusChanged` → `AUTHORIZED` | All parties have authorized | Originator side: execute on-chain settlement |
@@ -109,7 +109,7 @@ The event type is in `message`, the transfer ID is in `payload.id`.
 
 ### Important: Duplicate webhooks
 
-Notabene could send each webhook event more than once. Your handler must be idempotent. Check if you've already processed a transfer before creating records or executing settlements.
+Notabene may deliver each webhook event more than once. Your handler must be idempotent. Check if you've already processed a transfer before creating records or executing settlements.
 
 ---
 
@@ -120,8 +120,8 @@ Your role depends on which side of the transaction your client is on. The transf
 ```json
 {
   "agents": [
-    { "agent": { "@id": "did:web:your-service" }, "for": "did:web:client-vasp" },
-    { "agent": { "@id": "did:web:client-vasp" }, "for": "mailto:originator@example.com" }
+    { "@id": "<transfer-agent-uuid>", "agent": { "@id": "did:web:your-service" }, "for": "did:web:client-vasp" },
+    { "@id": "<transfer-agent-uuid>", "agent": { "@id": "did:web:client-vasp" }, "for": "mailto:originator@example.com" }
   ],
   "originator": { "@id": "mailto:originator@example.com" },
   "beneficiary": { "@id": "mailto:beneficiary@example.com" }
@@ -130,7 +130,7 @@ Your role depends on which side of the transaction your client is on. The transf
 
 To determine your role, trace the `for` chain starting from your entity DID:
 
-1. Build a map: `agent["@id"]` → `for`
+1. Build a map: `agents[i].agent["@id"]` → `agents[i].for` (the top-level `agents[i]["@id"]` is the TransferAgent's own UUID, not a DID)
 2. Starting from your DID, follow the chain: `you → for → for → ...`
 3. If the chain reaches `originator["@id"]` → you are on the **originator side** (you send funds)
 4. If the chain reaches `beneficiary["@id"]` → you are on the **beneficiary side** (you receive funds)
@@ -186,7 +186,8 @@ Authorization: Bearer {token}
 {}
 ```
 
-**Important:** Authorization takes no asset or address information.
+**Important:** The only body fields are the optional `settlementAddress` and `memoTag` (used on the beneficiary
+side); anything else, such as an asset, is ignored.
 
 ### Step 4: Wait for settlement conditions
 
@@ -198,7 +199,7 @@ Wait until **all parties have authorized** before settling on-chain:
 
 Once the transfer is `AUTHORIZED`:
 
-1. Parse the settlement address (CAIP-10 format: `eip155:42431:0xRecipient`)
+1. Read the settlement address from the transfer's `settlementAddress` (CAIP-10 format: `eip155:42431:0xRecipient`)
 2. Parse the asset (CAIP-19 format: `eip155:42431/erc20:0xTokenAddress`)
 3. Execute the ERC-20 `transfer(to, amount)` on-chain
 4. Wait for transaction confirmation
@@ -249,10 +250,10 @@ The `custodian` field is critical: it tells Notabene that you manage this addres
 
 ### Step 3: Confirm address ownership
 
-When you receive `tap.requireRelationshipConfirmationRequested`, Notabene is asking you to confirm that an address belongs to your client. The payload includes a `confirmCallbackUrl`:
+When you receive `tap.requireRelationshipConfirmationRequested`, Notabene is asking you to confirm that an address belongs to your client. The payload includes a `confirmCallbackUrl` (DIDs unencoded; URL-encode them); call it with `PATCH`:
 
 ```
-PATCH /entities/{entityDID}/relationships?from={addressDID}&to={customerDID}
+PATCH /entities/{entityDID}/relationships?from={addressDID}&to={targetDID}
 Content-Type: application/json
 Authorization: Bearer {token}
 
@@ -265,15 +266,17 @@ If the address does not belong to your client, do not confirm — the transfer w
 
 ### Step 4: Authorize
 
-Authorize with an empty body:
+Authorize, giving the client's receiving address when the originator does not know it yet:
 
 ```
 POST /entities/{entityDID}/tx/{transferId}/authorize
 Content-Type: application/json
 Authorization: Bearer {token}
 
-{}
+{ "settlementAddress": "eip155:1:0xClientWalletAddress" }
 ```
+
+`settlementAddress` (CAIP-10 or `payto://` URI) and `memoTag` are optional; `{}` is valid.
 
 ### Step 5: Reconcile received transfers
 
@@ -286,8 +289,9 @@ Authorization: Bearer {token}
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `settlement_id` | yes | On-chain transaction hash |
-| `settlement_address` | yes | Destination address that received funds |
+| `settlement_id` | yes | On-chain transaction hash, CAIP-220 (`eip155:1:tx/0x…`) or raw |
+| `settlement_address` | yes | Destination address that received funds (plain, CAIP-10 or `did:pkh`) |
+| `asset` | no | CAIP-19; needed only when no input carries the chain (all plain) |
 | `settlement_id_index` | no | Vout or log index (for UTXO chains or multi-transfer txs) |
 | `memo_tag` | no | Memo/tag for chains that use them (e.g., XRP, XLM) |
 | `direction` | no | `INCOMING` or `OUTGOING` |
@@ -315,7 +319,7 @@ Authorization: Bearer {token}
       "policies": [{ "@type": "REQUIRE_AUTHORIZATION" }]
     }
   ],
-  "settlementId": "0xTransactionHash"
+  "settlementId": "eip155:1:tx/0xTransactionHash"
 }
 ```
 
@@ -336,7 +340,7 @@ When you receive `notification.transferStatusChanged` with `toStatus: "SETTLED"`
 | Action | Method | Endpoint | Body |
 |--------|--------|----------|------|
 | Get transfer details | GET | `/entities/{entityDID}/tx/{transferId}` | — |
-| Authorize | POST | `/entities/{entityDID}/tx/{transferId}/authorize` | `{}` |
+| Authorize | POST | `/entities/{entityDID}/tx/{transferId}/authorize` | `{}` or `{ "settlementAddress": "..." }` |
 | Report settlement | POST | `/entities/{entityDID}/tx/{transferId}/settle` | `{ "settlementId": "..." }` |
 | Reject | POST | `/entities/{entityDID}/tx/{transferId}/reject` | `{ "reason": "...", "comment": "..." }` |
 
@@ -354,25 +358,31 @@ When you receive `notification.transferStatusChanged` with `toStatus: "SETTLED"`
 
 Key fields on the transfer object:
 
+The response is `{ "transfer": { ... } }`:
+
 ```json
 {
-  "id": "transfer-uuid",
-  "amount": "5000",
-  "supportedAssets": ["eip155:42431/erc20:0x...", "USD"],
-  "fallbackSettlementAddresses": ["eip155:42431:0x..."],
-  "agents": [
-    { "agent": { "@id": "did:web:..." }, "for": "did:web:..." }
-  ],
-  "originator": { "@id": "mailto:..." },
-  "beneficiary": { "@id": "mailto:..." }
+  "transfer": {
+    "@id": "transfer-uuid",
+    "status": "AUTHORIZED",
+    "asset": "eip155:42431/erc20:0x...",
+    "amount": "50.00",
+    "settlementAddress": "eip155:42431:0x...",
+    "settlementId": null,
+    "agents": [
+      { "@id": "<transfer-agent-uuid>", "agent": { "@id": "did:web:..." }, "for": "did:web:...", "role": "VASP", "status": "AUTHORIZED" }
+    ],
+    "originator": { "@id": "mailto:..." },
+    "beneficiary": { "@id": "mailto:..." }
+  }
 }
 ```
 
-- `amount` — the transfer amount (human-readable, e.g., `"5000"` for $50.00 with 6-decimal tokens)
-- `supportedAssets` — CAIP-19 identifiers the transfer supports (may include fiat like `"USD"`)
-- `fallbackSettlementAddresses` — CAIP-10 addresses for settlement (updated as parties provide them)
-- `agents` — the agent chain (use this for role determination)
-- `originator["@id"]` / `beneficiary["@id"]` — the end-party DIDs
+- `amount` — decimal string in whole units of the asset (e.g. `"50.00"`)
+- `asset` — CAIP-19 identifier
+- `settlementAddress` — CAIP-10 address to pay (set once the beneficiary side provides it)
+- `agents` — the agent chain (use `agent["@id"]` and `for` for role determination)
+- `originator["@id"]` / `beneficiary["@id"]` — the end-party identifiers
 
 ---
 
@@ -399,14 +409,15 @@ function claimForSettlement(transferId):
 
 ## Common Pitfalls
 
-### 1. Authorizing with asset/address in the body
-The `authorize` endpoint takes an **empty body** `{}`.
+### 1. Putting the wrong fields in the authorize body
+The `authorize` body accepts only the optional `settlementAddress` and `memoTag`; `{}` is valid. Other fields (asset,
+amount) are ignored, so they do not change the transfer.
 
 ### 2. Settling before all parties authorize
 You must wait for `notification.transferStatusChanged` with `toStatus: "AUTHORIZED"` (meaning ALL parties have authorized — including your client and their compliance team) before executing on-chain settlement. The per-agent `notification.transferAgentStatusChanged` events fire when individual agents authorize — this is not sufficient.
 
 ### 3. Not handling duplicate webhooks
-Every webhook event is delivered at least twice. Without deduplication, you may create duplicate records, execute duplicate on-chain transfers, or hit nonce collisions.
+Webhook events are delivered at least once and may be delivered more than once. Without deduplication, you may create duplicate records, execute duplicate on-chain transfers, or hit nonce collisions.
 
 ### 4. Not handling event ordering
 `AUTHORIZED`, `transferAgentAdded` and `transferCreated` events can arrive in any order. Design your handlers to work regardless of which event arrives first — check current state and act accordingly.
@@ -437,7 +448,7 @@ When calling `POST /entities/{entityDID}/relationships`, wallet services must in
 NB_CLIENT_ID=<from notabene dashboard>
 NB_CLIENT_SECRET=<from notabene dashboard>
 NB_ENTITY_DID=did:web:your-service.example.com
-NB_API_URL=https://api.notabene.dev
+NB_API_URL=https://api.eu1.notabene.id
 NOTABENE_OAUTH_TOKEN_URL=https://auth.notabene.id/oauth/token
-NB_OAUTH_AUDIENCE=https://api.notabene.dev
+NB_OAUTH_AUDIENCE=https://api.eu1.notabene.id
 ```

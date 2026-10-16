@@ -7,12 +7,14 @@ This document provides comprehensive information about all webhook events sent b
 - [Overview](#overview)
 - [Webhook Envelope Structure](#webhook-envelope-structure)
 - [Webhook Categories](#webhook-categories)
+- [Setup](#setup)
 - [Authentication & Security](#authentication--security)
 - [Webhook Events](#webhook-events)
   - [Transfer Management Events](#transfer-management-events)
   - [TAP Policy Requirement Events](#tap-policy-requirement-events)
   - [TAP Policy Satisfaction Events](#tap-policy-satisfaction-events)
   - [TAP Policy Status Events](#tap-policy-status-events)
+  - [Settlement Signal Event](#settlement-signal-event)
 - [Common Fields](#common-fields)
 - [Error Handling](#error-handling)
 - [Testing](#testing)
@@ -59,6 +61,7 @@ These webhooks notify you about changes in transfer state and agent management:
 - **notification.transferStatusChanged**: Transfer status has been updated
 - **notification.transferAgentAdded**: A new agent has been added to a transfer
 - **notification.transferAgentReplaced**: An agent has been replaced in a transfer
+- **notification.transferAgentRemoved**: An agent has been removed from a transfer
 - **notification.transferAgentStatusChanged**: An agent's status has been updated
 
 ### 2. TAP Policy Requirement Events
@@ -81,12 +84,25 @@ These webhooks confirm that previously requested actions have been completed:
 
 These webhooks provide updates on the overall status of policy processing:
 
-- **tap.policySatisfied**: A policy has been fully satisfied
 - **tap.requirePresentationPartiallySatisfied**: A presentation requirement has been partially fulfilled (some but not all requested credentials received)
+
+### 5. Settlement Signal
+
+- **notification.settleTransaction**: Settlement-readiness signal (only for entities with a settlement policy and settlement signals enabled by Notabene)
+
+Other event types exist for Flow payments (`flow.*`) and DDQ connections (`connection.*`); they are outside this guide.
+
+## Setup
+
+Webhooks are only delivered once the entity has a Svix application:
+
+- `PUT /entities/{entityDID}/webhook` — enables webhooks (creates the Svix application; idempotent). Returns `{ "svix": <application> }`.
+- `GET /entities/{entityDID}/webhook?generate_portal_url=true` — returns `{ "svix": <application>, "svixPortalUrl": "..." }`. Add endpoint URLs, pick event types and copy the endpoint signing secret (`whsec_…`) in that portal.
+- `DELETE /entities/{entityDID}/webhook` — disables webhooks.
 
 ## Authentication & Security
 
-All webhooks include Svix signatures for verification. You should validate these signatures to ensure the webhook originated from Notabene:
+All webhooks are signed by Svix (`svix-id`, `svix-timestamp`, `svix-signature` headers). Verify them against the **raw** request body with the endpoint's signing secret:
 
 ```javascript
 import { Webhook } from "svix";
@@ -147,7 +163,7 @@ try {
 
 **Purpose**: Notifies that a transfer's status has changed.
 
-**When Sent**: When a transfer moves between states (e.g., from "PENDING" to "AUTHORIZED", "AUTHORIZED" to "SETTLED").
+**When Sent**: When a transfer moves between states (e.g., from `AWAITING-COUNTERPARTY` to `AUTHORIZED`, `AUTHORIZED` to `SETTLED`).
 
 **Expected Action**: Update your system's transfer status tracking.
 
@@ -159,9 +175,9 @@ try {
   "payload": {
     "for": "did:web:example.com",
     "id": "transfer-123",
-    "fromStatus": "PENDING",
+    "fromStatus": "AWAITING-COUNTERPARTY",
     "toStatus": "AUTHORIZED",
-    "settlementId": "settlement-456"
+    "settlementId": "eip155:1:tx/0xabc..."
   },
   "version": "1.0.0"
 }
@@ -179,7 +195,7 @@ try {
 
 **Response Required**: None (informational only).
 
-**Common Status Values**: `PENDING`, `AUTHORIZED`, `REJECTED`, `SETTLED`, `FLAGGED`, `REVERTED`, `FROZEN`, `CLEARED`
+**Status Values**: `AWAITING-YOURS` (new transfers start here), `AWAITING-COUNTERPARTY`, `AUTHORIZED`, `REJECTED`, `SETTLED`, `FLAGGED`, `FLAGGED-SETTLEMENT`, `REVERTED`, `REVERT-REQUESTED`, `REVERT-AUTHORIZED`, `REVERT-REJECTED`, `REVERT-FLAGGED`, `FROZEN`, `CLEARED`. Legacy transfers may still show the deprecated `OUTGOING` / `INCOMING`. There is no `PENDING` transfer status.
 
 ---
 
@@ -224,7 +240,7 @@ try {
 
 **Response Required**: None (informational only).
 
-**Agent Roles**: `VASP`, `Custodian`, `SettlementAddress`, `SourceAddress`, `Gateway`
+**Agent Roles**: `VASP`, `Custodian`, `SettlementAddress`, `SourceAddress`, `Gateway`, `Unknown`
 
 ---
 
@@ -273,11 +289,36 @@ try {
 
 ---
 
+#### notification.transferAgentRemoved
+
+**Purpose**: Notifies that an agent has been removed from a transfer.
+
+**Payload Structure**:
+
+```json
+{
+  "message": "notification.transferAgentRemoved",
+  "payload": {
+    "for": "did:web:example.com",
+    "id": "transfer-123",
+    "removedAgentID": "agent-789",
+    "reason": "..."
+  },
+  "version": "1.0.0"
+}
+```
+
+**Payload Fields**: `for` (string, required), `id` (transfer ID, required), `removedAgentID` (string, required), `reason` (string, optional).
+
+**Response Required**: None (informational only).
+
+---
+
 #### notification.transferAgentStatusChanged
 
 **Purpose**: Notifies that an agent's status within a transfer has changed.
 
-**When Sent**: When an agent's processing state changes (e.g., from "processing" to "completed").
+**When Sent**: When an agent's processing state changes (e.g., from `PROCESSING` to `AUTHORIZED`).
 
 **Expected Action**: Update agent status tracking.
 
@@ -290,8 +331,8 @@ try {
     "for": "did:web:example.com",
     "id": "transfer-123",
     "agentID": "agent-456",
-    "fromStatus": "processing",
-    "toStatus": "completed"
+    "fromStatus": "PROCESSING",
+    "toStatus": "AUTHORIZED"
   },
   "version": "1.0.0"
 }
@@ -309,7 +350,7 @@ try {
 
 **Response Required**: None (informational only).
 
-**Common Agent Statuses**: `processing`, `completed`, `failed`, `pending`
+**Agent Statuses**: `PROCESSING`, `AUTHORIZED`, `REJECTED`, `SETTLED`, `FAILED`, `REPLACED`, `UNREACHABLE`
 
 ---
 
@@ -335,7 +376,7 @@ try {
     "beneficiaryAgentID": "beneficiary-agent-456",
     "originatorPresentationDefinition": "...",
     "beneficiaryPresentationDefinition": "...",
-    "callbackUrl": "/entities/did%3Aweb%3Aexample.com/transfers/transfer-123/presentations/callback",
+    "callbackUrl": "/entities/did:web:example.com/transfers/transfer-123/append",
     "encryptionKey": "...",
     "policyId": "policy-789"
   },
@@ -351,13 +392,13 @@ try {
 | `id`                                 | string | Yes      | Transfer ID                                                        |
 | `originatorAgentID`                  | string | Yes      | Originator agent identifier                                        |
 | `beneficiaryAgentID`                 | string | No       | Beneficiary agent identifier (included when beneficiary presentation is required) |
-| `originatorPresentationDefinition`   | string | Yes      | Presentation definition for originator credentials                 |
+| `originatorPresentationDefinition`   | string | Yes      | Presentation definition for originator credentials (may be empty)  |
 | `beneficiaryPresentationDefinition`  | string | No       | Presentation definition for beneficiary credentials (only present when beneficiary data is required) |
-| `callbackUrl`                        | string | Yes      | Relative URL path to POST presentation data                        |
+| `callbackUrl`                        | string | Yes      | Relative path to POST PII to: `/entities/{did}/transfers/{id}/append` (Notabene-managed encryption) or `/entities/{did}/transfers/{id}/policies/{policyId}/presentation` (entity-managed encryption) |
 | `encryptionKey`                      | object | No       | Encryption key for securing presentation data                      |
 | `policyId`                           | string | Yes      | Policy identifier                                                  |
 
-**Response Required**: POST presentation data to the `callbackUrl` to satisfy the requirement.
+**Response Required**: POST the IVMS101 data to `callbackUrl` (see the append / presentation endpoints in the API reference) to satisfy the requirement.
 
 ---
 
@@ -379,8 +420,8 @@ try {
     "id": "transfer-123",
     "originatorAgentID": "originator-agent-123",
     "beneficiaryAgentID": "beneficiary-agent-456",
-    "authorizeCallbackUrl": "/entities/did%3Aweb%3Aexample.com/transfers/transfer-123/authorize",
-    "rejectCallbackUrl": "/entities/did%3Aweb%3Aexample.com/transfers/transfer-123/reject",
+    "authorizeCallbackUrl": "/entities/did:web:example.com/transfers/transfer-123/authorize",
+    "rejectCallbackUrl": "/entities/did:web:example.com/transfers/transfer-123/reject",
     "purpose": "High-value transfer requires manual review"
   },
   "version": "1.0.0"
@@ -401,7 +442,7 @@ try {
 
 **Response Required**: POST to either `authorizeCallbackUrl` (to approve) or `rejectCallbackUrl` (to reject) the transfer.
 
-> **Note**: The callback URLs are relative paths. Prepend the Notabene API base URL (e.g., `https://api.notabene.id`) to form the full endpoint.
+> **Note**: The callback URLs are relative paths with the entity DID not URL-encoded. Prepend the API base URL (`https://api.eu1.notabene.id`) and URL-encode the DID segment. The bodies are those of the authorize / reject endpoints (reject requires a `reason`).
 
 ---
 
@@ -420,11 +461,11 @@ try {
   "message": "tap.requireRelationshipConfirmationRequested",
   "payload": {
     "for": "did:web:example.com",
-    "from": "did:web:counterparty.com",
+    "from": "did:pkh:eip155:1:0x1234...",
     "id": "transfer-123",
     "originatorAgentID": "originator-agent-123",
     "beneficiaryAgentID": "beneficiary-agent-456",
-    "confirmCallbackUrl": "/entities/did%3Aweb%3Aexample.com/relationships?from=did%3Aweb%3Acounterparty.com&to=confirmed",
+    "confirmCallbackUrl": "/entities/did:web:example.com/relationships?from=did:pkh:eip155:1:0x1234...&to=did:web:example.com",
     "purpose": "Confirm relationship between entities"
   },
   "version": "1.0.0"
@@ -436,16 +477,16 @@ try {
 | Field                | Type   | Required | Description                                    |
 | -------------------- | ------ | -------- | ---------------------------------------------- |
 | `for`                | string | Yes      | Entity DID receiving this webhook              |
-| `from`               | string | Yes      | DID of the counterparty agent                  |
+| `from`               | string | Yes      | Agent (usually the address DID) whose relationship must be confirmed |
 | `id`                 | string | Yes      | Transfer ID                                    |
 | `originatorAgentID`  | string | Yes      | Originator agent identifier                    |
 | `beneficiaryAgentID` | string | Yes      | Beneficiary agent identifier                   |
-| `confirmCallbackUrl` | string | Yes      | Relative URL path to POST confirmation         |
+| `confirmCallbackUrl` | string | Yes      | Relative path (with `from`/`to` query) to `PATCH` to confirm |
 | `purpose`            | string | No       | Reason the confirmation is required            |
 
-**Response Required**: POST confirmation to `confirmCallbackUrl`.
+**Response Required**: `PATCH` `confirmCallbackUrl` (the confirm-relationship endpoint, `PATCH /entities/{entityDID}/relationships?from=…&to=…`).
 
-> **Note**: The callback URL is a relative path. Prepend the Notabene API base URL to form the full endpoint.
+> **Note**: The callback URL is a relative path with unencoded DIDs. Prepend the API base URL and URL-encode the path DID and query values.
 
 ---
 
@@ -487,7 +528,7 @@ try {
 
 #### tap.requirePresentationSatisfied
 
-**Purpose**: Confirms that a previously requested presentation has been completed. Includes callback URLs for completing beneficiary self-policy checks (beneficiary name matching and internal checks).
+**Purpose**: Confirms that a previously requested presentation has been completed. Sent to both parties. Includes callback URLs for the beneficiary self-policy checks (beneficiary name matching and internal checks) when those checks are configured.
 
 **When Sent**: After required credentials/documents have been successfully presented and PII validation has passed (following a tap.requirePresentationRequested event).
 
@@ -502,6 +543,7 @@ try {
     "for": "did:web:example.com",
     "id": "transfer-123",
     "agentID": "agent-456",
+    "policyType": "REQUIRE_PRESENTATION",
     "confirmBeneficiaryCallbackUrl": "/entities/did%3Aweb%3Aexample.com/tx/transfer-123/checks/beneficiary-name-matching",
     "confirmInternalChecksCallbackUrl": "/entities/did%3Aweb%3Aexample.com/tx/transfer-123/checks/internal-checks"
   },
@@ -516,10 +558,11 @@ try {
 | `for`                              | string | Yes      | Entity DID receiving this webhook                   |
 | `id`                               | string | Yes      | Transfer ID                                         |
 | `agentID`                          | string | Yes      | Agent that satisfied the requirement                |
-| `confirmBeneficiaryCallbackUrl`    | string | Yes      | Relative URL path to confirm beneficiary name matching |
-| `confirmInternalChecksCallbackUrl` | string | Yes      | Relative URL path to confirm internal checks        |
+| `policyType`                       | string | Yes      | `REQUIRE_PRESENTATION`, or `COUNTERPARTY_REQUIRE_PRESENTATION` on the copy sent to the counterparty |
+| `confirmBeneficiaryCallbackUrl`    | string | No       | Relative URL path to confirm beneficiary name matching (only when that check is configured) |
+| `confirmInternalChecksCallbackUrl` | string | No       | Relative URL path to confirm internal checks (only when that check is configured) |
 
-**Response Required**: POST to `confirmBeneficiaryCallbackUrl` and `confirmInternalChecksCallbackUrl` to complete the self-policy checks. Both checks must be completed before the transfer can proceed to authorization.
+**Response Required**: POST to each callback URL present to complete the self-policy checks. Pending checks must be completed before the transfer can proceed to authorization.
 
 > **Note**: The callback URLs are relative paths. Prepend the Notabene API base URL to form the full endpoint.
 
@@ -542,10 +585,10 @@ try {
     "for": "did:web:example.com",
     "id": "transfer-123",
     "relationshipId": "relationship-789",
-    "agentID": "agent-456",
-    "from": "did:web:counterparty.com",
-    "to": "confirmed",
-    "status": "confirmed"
+    "agentID": "did:pkh:eip155:1:0x1234...",
+    "from": "did:pkh:eip155:1:0x1234...",
+    "to": "did:web:example.com",
+    "status": "CONFIRMED"
   },
   "version": "1.0.0"
 }
@@ -558,50 +601,16 @@ try {
 | `for`            | string | Yes      | Entity DID receiving this webhook |
 | `id`             | string | Yes      | Transfer ID                       |
 | `relationshipId` | string | Yes      | Relationship identifier           |
-| `agentID`        | string | Yes      | Agent that confirmed the relationship |
-| `from`           | string | Yes      | Source entity DID                 |
-| `to`             | string | Yes      | Target/confirmation status        |
-| `status`         | string | Yes      | Relationship confirmation status  |
+| `agentID`        | string | Yes      | Same as `from`                    |
+| `from`           | string | Yes      | Relationship source (address DID) |
+| `to`             | string | Yes      | Relationship target (entity DID)  |
+| `status`         | string | Yes      | Relationship status (`CONFIRMED` or `PROVEN`) |
 
 **Response Required**: None (informational only).
 
 ---
 
 ### TAP Policy Status Events
-
-#### tap.policySatisfied
-
-**Purpose**: Notifies that a policy has been fully satisfied for a transfer.
-
-**When Sent**: When all requirements of a policy have been met and the policy evaluation is complete.
-
-**Expected Action**: Optional - log the completion, update compliance tracking.
-
-**Payload Structure**:
-
-```json
-{
-  "message": "tap.policySatisfied",
-  "payload": {
-    "for": "did:web:example.com",
-    "id": "transfer-123",
-    "policyType": "RequirePresentation"
-  },
-  "version": "1.0.0"
-}
-```
-
-**Payload Fields**:
-
-| Field        | Type   | Required | Description                                              |
-| ------------ | ------ | -------- | -------------------------------------------------------- |
-| `for`        | string | Yes      | Entity DID receiving this webhook                        |
-| `id`         | string | Yes      | Transfer ID                                              |
-| `policyType` | string | Yes      | Type of policy that was satisfied (e.g., `RequirePresentation`, `RequireAuthorization`, `RequireRelationshipConfirmation`) |
-
-**Response Required**: None (informational only).
-
----
 
 #### tap.requirePresentationPartiallySatisfied
 
@@ -637,12 +646,22 @@ try {
 
 ---
 
+### Settlement Signal Event
+
+#### notification.settleTransaction
+
+**Purpose**: Tells the entity a transfer is ready to settle, or needs action. Only sent when Notabene has enabled settlement signals and the entity has a settlement policy.
+
+**Payload Fields** (besides `for` and `id`): `transferId`, `trigger` (`INTERNAL_APPROVED` | `AUTHORIZATION_COMPLETE` | `COUNTERPARTY_REJECTED` | `TIMEOUT`), `action` (`SETTLE` | `REVIEW` | `CANCEL` | `ACK`), `transferStatus`, `settlementReadiness`, `internalPoliciesComplete`, `authorizationRequirementsComplete`, `authorizationRequirementsPending[]` (`requirement`, `from`, `responded`, `timedOut`, `timeoutAt?`), `timedOut`, `timeoutAction?` (`AUTHORIZE` | `FLAG` | `REJECT`), `counterpartyRejectedAction?` (`FLAG` | `REJECT`).
+
+---
+
 ## Common Fields
 
 All webhook `payload` objects include these standard fields:
 
 - **`for`**: String DID of the entity this webhook is intended for
-- **`id`**: String transfer ID or transaction identifier (except connection events which use `connectionId`)
+- **`id`**: String transfer ID
 - **`agentID`** (when applicable): String identifier of the agent involved
 - **Timestamp fields**: Automatically added by Svix to the HTTP headers (e.g., `svix-timestamp`, `svix-id`, etc.)
 
@@ -658,16 +677,15 @@ The webhook envelope always includes:
 
 Svix automatically handles webhook delivery failures with:
 
-- **Exponential backoff**: Increasing delays between retry attempts
-- **Multiple retries**: Up to several attempts over 3 days
-- **Dead letter queue**: Failed webhooks are available in Svix dashboard
+- **Exponential backoff**: Increasing delays between retry attempts, per Svix's retry schedule
+- **Manual replay**: Failed messages can be inspected and resent from the Svix portal
 
 ### Recommended Error Handling
 
 ```javascript
 app.post("/notabene-webhook", async (req, res) => {
   try {
-    // Verify signature first
+    // Verify signature first (req.body must be the raw body, e.g. express.raw())
     const verified = webhook.verify(req.body, req.headers);
 
     // The verified object has the envelope structure
@@ -690,8 +708,7 @@ app.post("/notabene-webhook", async (req, res) => {
 ### HTTP Response Codes
 
 - **200-299**: Success - webhook processed successfully
-- **400-499**: Client error - webhook will NOT be retried
-- **500-599**: Server error - webhook will be retried
+- **Any other status or timeout**: Treated as a failure and retried
 
 ## Testing
 
@@ -771,20 +788,25 @@ async function handleAuthorizationRequest(payload) {
   // Make decision and callback to Notabene
   const decision = await makeAuthorizationDecision(payload);
 
-  // Prepend the Notabene API base URL to the relative callback paths
-  const baseUrl = "https://api.notabene.id";
+  // Callback paths are relative and carry the raw entity DID: encode it
+  const baseUrl = "https://api.eu1.notabene.id";
+  const encode = (path) => path.replace(payload.for, encodeURIComponent(payload.for));
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${accessToken}`,
+  };
 
   if (decision.approved) {
-    await fetch(`${baseUrl}${payload.authorizeCallbackUrl}`, {
+    await fetch(`${baseUrl}${encode(payload.authorizeCallbackUrl)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision: "approved", reason: decision.reason }),
+      headers,
+      body: JSON.stringify({}),
     });
   } else {
-    await fetch(`${baseUrl}${payload.rejectCallbackUrl}`, {
+    await fetch(`${baseUrl}${encode(payload.rejectCallbackUrl)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision: "rejected", reason: decision.reason }),
+      headers,
+      body: JSON.stringify({ reason: "COMPLIANCE_POLICIES", comment: decision.reason }),
     });
   }
 }
@@ -801,4 +823,4 @@ For webhook integration support:
 
 ---
 
-_This documentation covers all webhook events currently supported by the Notabene platform. Webhook payloads and event types may be extended in future versions._
+_This documentation covers the transfer-related webhook events of the v2 API. Webhook payloads and event types may be extended in future versions._

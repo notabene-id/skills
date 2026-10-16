@@ -34,9 +34,9 @@ Infer it from the codebase, config or credentials before asking. Ask the user on
 | Base URL | `https://api.notabene.id` (test: `https://api.notabene.dev`) | `https://api.eu1.notabene.id` | `https://sandbox.notabene.id`, `https://eu-a.notabene.id`, `https://us-a.notabene.id` |
 | Path shape | `/tx/create`, `/tx/info`, `/tx/update`, `/tx/list?vaspDID=…` | `/entities/{entityDID}/tx`, `/entities/{entityDID}/relationships` | `/api/v1/transfers`, `/api/v1/customers`, `/api/v1/wallets` |
 | Institution id | `vaspDID` (often `did:ethr:…`) | `entityDID` in every path (`did:web:…`) | None in the path: the token identifies the institution |
-| Transfer statuses | `NEW`, `SENT`, `ACK`, `ACCEPTED`, `DECLINED`, `REJECTED`, `CANCELLED`, `SAVED`, … | `PENDING`, `AUTHORIZED`, `REJECTED`, `SETTLED`, … | `Active`, `ReadyToSettle`, `Settled`, `Rejected`, `Canceled`, … |
-| Webhooks | One payload per transaction change (see v1 guide) | Svix, `{ "message", "payload", "version" }` with `notification.*` / `tap.*` events | Svix, `whsec_` secret set on Integration → Webhooks; `transfer.*.v3` events (`transfer.status_changed.v3`, …) |
-| Body casing | camelCase | camelCase | snake_case (IVMS-101 keys stay camelCase) |
+| Transfer statuses | `NEW`, `MISSING_BENEFICIARY_DATA`, `WAITING_FOR_INFORMATION`, `INCOMPLETE`, `NOT_READY`, `SENT`, `ACK`, `ACCEPTED`, `DECLINED`, `REJECTED`, `CANCELLED`, `SAVED` | `AWAITING-YOURS`, `AWAITING-COUNTERPARTY`, `AUTHORIZED`, `REJECTED`, `SETTLED`, … | `Active`, `ReadyToSettle`, `Settled`, `Rejected`, `Canceled`, … |
+| Webhooks | Svix, `{ "message", "payload": { "transaction" }, "version" }` with `notification.*` events (registered via `POST /webhook`); deprecated unsigned `txnotification` callback posts the raw transaction | Svix, `{ "message", "payload", "version" }` with `notification.*` / `tap.*` events | Svix, `whsec_` secret set on Integration → Webhooks; `transfer.*.v3` events (`transfer.status_changed.v3`, …) |
+| Body casing | camelCase (exceptions: `vasp_did` on `/tx/cancel` and `/v1/addresses`); IVMS uses `nameIdentifierType` | camelCase | snake_case (IVMS-101 keys stay camelCase) |
 
 Beware the name clash: v2.1's paths start with `/api/v1`. That is the **v2.1** platform, not the v1 API.
 
@@ -113,21 +113,27 @@ POST https://auth.notabene.id/oauth/token
 Dashboard: `https://app.eu1.notabene.id/`. Almost every path includes `{entityDID}`, the institution's DID from the
 dashboard's Settings.
 
-**Webhooks** — delivered by Svix; verify `svix-signature` on the raw body. Envelope: event type in `message` (not
+**Webhooks** — register first with `PUT /entities/{entityDID}/webhook` (manage it via the Svix portal,
+`GET …/webhook?generate_portal_url=true`); nothing is sent before that. Delivered by Svix; verify `svix-signature` on
+the raw body. Envelope: event type in `message` (not
 `eventType`), transfer id in `payload.id`, all data under `payload`.
 
 **Originator lifecycle:**
 1. `POST /entities/{entityDID}/tx` — create the transfer **before** broadcasting.
-2. On `tap.requirePresentationRequested` → `POST .../transfers/{id}/append` with IVMS101 PII.
+2. On `tap.requirePresentationRequested` → POST the IVMS101 PII to the payload's `callbackUrl` (`.../tx/{id}/append`,
+   or `.../policies/{policyId}/presentation` for entity-managed encryption).
 3. Wait for `notification.transferStatusChanged` with `toStatus: "AUTHORIZED"`. Never broadcast before it.
 4. `POST .../tx/{id}/settle` with `{ "settlementId": "eip155:{chainId}:tx/{txHash}" }`.
 
 **Beneficiary lifecycle:**
 1. Register deposit addresses via `POST /entities/{entityDID}/relationships` (recommended; avoids a confirmation per
-   transfer).
+   transfer). A relationship naming your own DID as `from`, `to` or custodian is confirmed on creation; otherwise
+   confirm with `PATCH` on the event's `confirmCallbackUrl`.
 2. On `tap.requirePresentationSatisfied` → `GET` the transfer with `?decrypt=true`, run name matching.
-3. Complete `/checks/beneficiary-name-matching` and `/checks/internal-checks`.
-4. Authorize through configured policies or `POST .../tx/{id}/authorize` (empty body `{}`), or reject.
+3. Complete the checks your entity has configured (`/checks/beneficiary-name-matching`, `/checks/internal-checks`);
+   their callback URLs appear in the payload only when configured.
+4. Authorize through configured policies or `POST .../tx/{id}/authorize` (`{}`, or `{ "settlementAddress": "<CAIP-10>" }`
+   with optional `memoTag`), or reject.
 5. Deposits seen on-chain first: find the transfer with `GET .../tx/match`.
 
 **Wallet services (agents acting for another institution):** follow the transfer's `agents` `{ agent, for }` chain
@@ -135,9 +141,12 @@ from your DID; reaching `originator` means you send, reaching `beneficiary` mean
 addresses with the `custodian` field set to your own DID. Use an atomic claim so duplicate `AUTHORIZED` deliveries
 never settle twice.
 
-**JavaScript SDK** — `npm install @notabene/javascript-sdk`. Generate a `customerToken` server-side (never ship the API
-token to the browser), render `createWithdrawalAssist` / `createDepositAssist` / `createDepositRequest` /
-`createConnectWallet`, and use the response's `txCreate` as the body of `POST /entities/{entityDID}/tx`.
+**JavaScript SDK** — `npm install @notabene/javascript-sdk`. Get a customer token server-side from
+`POST /entities/{entityDID}/delegateToken` with `{ entityDID, delegateId }` (valid 1 hour; never ship the API token to
+the browser), render `createWithdrawalAssist` / `createDepositAssist` / `createDepositRequest` / `createConnectWallet`,
+then convert the result with `componentResponseToTxRequests(response, token, config)`: POST `createTx` to
+`/entities/{entityDID}/tx` and `ivms101` to `.../tx/{id}/append`. The response's `txCreate` is v1-shaped; do not send
+it to v2.
 
 **Identifiers:** customers `mailto:user@example.com` or `did:pkh:eip155:1:0x…`; addresses `did:pkh:eip155:<chainId>:<address>`;
 assets CAIP-19 (`eip155:1/erc20:0xA0b8…eB48`).
@@ -150,14 +159,21 @@ Read [`references/v1/guide-travel-rule-api.md`](references/v1/guide-travel-rule-
 API: transactions keyed by `vaspDID`, created with `POST /tx/create` and driven through `/tx/*` verbs. Treat v1 code as
 maintenance: fix it in v1 terms, and propose migration to v2.1 rather than extending it with new features.
 
+- **Auth:** `POST https://auth.notabene.id/oauth/token` (client credentials), `audience` `https://api.notabene.id`
+  (test: `https://api.notabene.dev`).
+- **Safe to send:** the Svix message `notification.processBlockchainTransaction`, fired when the transfer reaches the
+  VASP's `statusToProcessBlockchain` setting; `notification.haltBlockchainTransaction` means do not send. Report the
+  hash with `POST /tx/update { id, txHash }`.
+- **IVMS-101** in v1 uses `nameIdentifierType`; do not apply the v2.1 IVMS key rule to v1 bodies.
+
 ---
 
 ## Rules for every version
 
 - Never broadcast a withdrawal before the version's "safe to send" signal (v2.1 `ReadyToSettle`, v2 `AUTHORIZED`, v1
-  per the v1 guide), then report the transaction hash back.
+  `notification.processBlockchainTransaction`), then report the transaction hash back.
 - Webhooks are delivered at least once and can arrive out of order: make handlers idempotent and re-read the transfer
   from the API rather than trusting the payload alone.
 - Keep the API access token server-side; front ends use per-customer tokens.
 - Do not mix versions: a v2 `entityDID` path, a v2.1 snake_case body and a v1 `vaspDID` query never belong in one call.
-- Build against the test environment (v2.1 sandbox, the v2/v1 test hosts) before production.
+- Build against a test environment before production (v2.1 sandbox, a v2 sandbox entity, v1 `api.notabene.dev`).
