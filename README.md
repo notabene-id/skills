@@ -1,25 +1,40 @@
 # nb-skills
 
-Claude Code skills for working with Notabene APIs and related standards.
+Claude Code plugins for working with Notabene APIs and related standards.
 
-Install these skills in your Claude Code project to give your coding agent deep knowledge of Notabene integrations, the TAP protocol, and CAIP standards.
+Each plugin adds one skill that gives your coding agent working knowledge of a domain: integrating with Notabene
+Transact (Travel Rule), the Transaction Authorization Protocol (TAP), or Chain Agnostic Improvement Proposals (CAIPs).
+The agent loads a skill only when a task needs it.
 
-## Skills
+## Plugins
 
-| Skill | Description |
+| Plugin | What it covers |
 |-------|-------------|
-| [notabene-api](./notabene-api) | Integration guide for Notabene Transact (Travel Rule) across API v1 (legacy), v2 and v2.1 (current platform), plus the JavaScript SDK |
-| [tap-protocol-expert](./tap-protocol-expert) | Deep expertise on the Transaction Authorization Protocol (TAP) and TAIPs |
-| [caip-standards-expert](./caip-standards-expert) | Expert on Chain Agnostic Improvement Proposals (CAIPs) and the CASA namespace registry |
+| [notabene-api](./plugins/notabene-api) | Integration guide for Notabene Transact (Travel Rule) across API v1 (legacy), v2 and v2.1 (current platform), plus the Notabene JavaScript SDK |
+| [tap-protocol-expert](./plugins/tap-protocol-expert) | Deep expertise on the Transaction Authorization Protocol (TAP) and TAIPs |
+| [caip-standards-expert](./plugins/caip-standards-expert) | Expert on Chain Agnostic Improvement Proposals (CAIPs) and the CASA namespace registry |
 
 ## Installation
 
-### Option 1: `npx skills add` (recommended)
+In Claude Code, add this repository as a plugin marketplace, then install the plugins you need:
 
-Install skills directly from the command line:
+```text
+/plugin marketplace add notabene-id/skills
+/plugin install notabene-api@notabene-skills
+/plugin install tap-protocol-expert@notabene-skills
+/plugin install caip-standards-expert@notabene-skills
+```
 
-```sh
-npx skills add Notabene-id/skills
+Other agents that read Agent Skills can use the skill folders directly, for example with
+`npx skills add notabene-id/skills`. Each skill lives at `plugins/<name>/skills/<name>/`.
+
+## Repository layout
+
+```text
+.claude-plugin/marketplace.json        # The marketplace: lists every plugin
+plugins/<name>/.claude-plugin/plugin.json
+plugins/<name>/skills/<name>/SKILL.md  # The skill: when to use it, and where to read next
+plugins/<name>/skills/<name>/references/
 ```
 
 ## License

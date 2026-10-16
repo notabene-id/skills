@@ -1,0 +1,20 @@
+{
+  "name": "caip-standards-expert",
+  "version": "1.0.0",
+  "description": "Expert on Chain Agnostic Improvement Proposals (CAIPs) and the CASA namespace registry",
+  "author": {
+    "name": "Notabene",
+    "email": "support@notabene.id",
+    "url": "https://notabene.id"
+  },
+  "homepage": "https://github.com/notabene-id/skills/tree/main/plugins/caip-standards-expert",
+  "repository": "https://github.com/notabene-id/skills",
+  "license": "MIT",
+  "keywords": [
+    "caip",
+    "chain-agnostic",
+    "blockchain",
+    "identifiers",
+    "standards"
+  ]
+}
