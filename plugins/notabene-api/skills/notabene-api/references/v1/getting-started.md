@@ -139,7 +139,7 @@ Ownership proofs, selected by `type` (relevant for self-hosted destinations; val
 
 | Status | Meaning |
 | --- | --- |
-| `SAVED` | Stored, not sent (below-threshold creates park here; no `SENT` webhook). |
+| `SAVED` | Stored, not sent to a counterparty: below threshold, a self-hosted wallet, or internal. No `SENT` webhook follows; the originator broadcasts and records the hash. |
 | `NEW` | Awaiting the originator's approval. |
 | `MISSING_BENEFICIARY_DATA` | Created without required beneficiary data; still approvable, accepts `/tx/update` data. |
 | `WAITING_FOR_INFORMATION` | Waiting for party data. Not exercised; for `/tx/update` it is originator-only, unlike `INCOMPLETE`. |

@@ -21,6 +21,8 @@ Statuses and the verb table are in [Getting started](getting-started.md); pitfal
    `transactionBlockchainInfo.destination`.
 2. If the response is `NEW`, `POST /tx/approve?id=<id>` → `SENT` (skip if an auto-approve rule already did it).
 3. Wait for `status: "ACCEPTED"` (beneficiary: `SENT → ACK → ACCEPTED`); stop on `REJECTED` / `DECLINED`.
+   If the create returns `SAVED` instead, nothing is sent to a counterparty (below threshold, a self-hosted
+   wallet, or an internal transfer) and nothing will arrive to wait for: go straight to step 4.
 4. Broadcast, then `POST /tx/update` with `{ "id", "txHash" }`.
 
 ## 1. Validate (optional)
@@ -111,7 +113,8 @@ Validation observed against the real v1 stack:
 - **Every** originator person above threshold needs a name, an account number, and a national id, date and place of
   birth, or geographic address; a name alone yields `originatorGeographicAddressMissing` or
   `originatorDateAndPlaceOfBirthMissing`.
-- **Below threshold**, it parks at `SAVED` and is never sent.
+- **Below threshold**, to a **self-hosted wallet**, or **internal** (both customers yours), it stays at `SAVED` and is
+  never sent: no `SENT`/`ACCEPTED` follows. Broadcast, then record the hash (see the quick start).
 - Party DIDs must match `^did:[a-zA-Z0-9]*:.*$`.
 
 The response is the transaction at `NEW`, or `SENT` if an auto-approve rule fired. Retrying a timed-out create can
@@ -128,7 +131,8 @@ yet confirmed (a changed `beneficiaryVASPdid` means it was redirected; re-evalua
 pending. `ACCEPTED`: go. `REJECTED` / `DECLINED`: do not broadcast.
 
 v1 has no separate "authorized" status: `ACCEPTED` is the beneficiary's positive decision. **Never broadcast before
-`ACCEPTED`**: the API doesn't block it, but Notabene's own bridge settles only then.
+`ACCEPTED`** on a transfer that was sent: the API doesn't block it, but Notabene's own bridge settles only then. A
+transfer that stays `SAVED` was never sent, so there is no decision to wait for.
 
 ## 5. Record the on-chain hash
 

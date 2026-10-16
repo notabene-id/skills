@@ -14,7 +14,8 @@ terms, and propose migration to v2.1 rather than extending it with new features.
 
 **Originator:** optional `POST /tx/validate/full` → `POST /tx/create` (set a unique `transactionRef`) → `/tx/approve`
 unless an auto-approve rule does it (`NEW` → `SENT`) → wait for the beneficiary institution (`SENT` → `ACK` →
-`ACCEPTED`) → broadcast only after `ACCEPTED` → record the hash with `POST /tx/update`.
+`ACCEPTED`) → broadcast only after `ACCEPTED` → record the hash with `POST /tx/update`. A create that stays `SAVED`
+(below threshold, self-hosted or internal) is never sent: broadcast and record the hash without waiting.
 
 **Beneficiary:** register deposit addresses → on `SENT`, `/tx/confirm` the address (→ `ACK`) or `/tx/reject` →
 `/tx/accept` (only from `ACK`; confirming is not accepting) or `/tx/decline` (from `ACK`, `SENT`, `SAVED`,

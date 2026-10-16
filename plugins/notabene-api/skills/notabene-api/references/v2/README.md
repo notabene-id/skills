@@ -32,6 +32,6 @@ from your DID; reaching `originator` means you send, reaching `beneficiary` mean
 addresses with the `custodian` field set to your own DID. Use an atomic claim so duplicate `AUTHORIZED` deliveries
 never settle twice.
 
-**JavaScript SDK** — `npm install @notabene/javascript-sdk`. Generate a `customerToken` server-side (never ship the API
+**JavaScript SDK** — `npm install @notabene/javascript-sdk`. Generate a customer token server-side with `POST /entities/{entityDID}/delegateToken` (never ship the API
 token to the browser), render `createWithdrawalAssist` / `createDepositAssist` / `createDepositRequest` /
 `createConnectWallet`, and use the response's `txCreate` as the body of `POST /entities/{entityDID}/tx`.

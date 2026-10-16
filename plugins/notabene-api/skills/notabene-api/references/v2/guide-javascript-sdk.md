@@ -48,23 +48,26 @@ Source: [gitlab.com/notabene/open-source/javascript-sdk](https://gitlab.com/nota
 ### Generate on your backend
 
 ```
-POST /entities/{entityDID}/auth/customer-token
+POST /entities/{entityDID}/delegateToken
 Authorization: Bearer <your_api_access_token>
 Content-Type: application/json
 ```
 
 ```json
 {
-  "customerRef": "unique-stable-customer-id",
+  "delegateId": "unique-stable-customer-id",
   "entityDID": "did:web:your-vasp.com"
 }
 ```
 
-**Response:** `{ "token": "eyJhbGc..." }`
+`entityDID` must match the one in the path.
 
-> **Important:** `customerRef` must be unique and stable per customer. Reusing the same ref across different customers breaks ownership proof reusability. Generate the token server-side immediately before rendering the component — do not cache it long-term.
+**Response:** `{ "access_token": "eyJhbGc...", "delegateDid": "did:…", "token_type": "Bearer" }`. Pass
+`access_token` to the SDK as `authToken`.
 
-Reference: [devx.notabene.id/docs/customertoken](https://devx.notabene.id/docs/customertoken)
+> **Important:** `delegateId` must be unique and stable per customer. Reusing the same id across different customers breaks ownership proof reusability. Generate the token server-side immediately before rendering the component — do not cache it long-term.
+
+Reference: [devx.notabene.id/reference/createdelegatetoken](https://devx.notabene.id/reference/createdelegatetoken)
 
 ---
 
@@ -75,7 +78,7 @@ import Notabene from '@notabene/javascript-sdk';
 
 const notabene = new Notabene({
   nodeUrl: 'https://api.eu1.notabene.id',  // your region's API host (EU here; US: api.us1)
-  authToken: customerToken,                 // from your backend — NOT your API access token
+  authToken: customerToken,                 // access_token from delegateToken — NOT your API access token
 });
 ```
 
@@ -233,7 +236,7 @@ const withdrawal = notabene.createWithdrawalAssist(data, {
 
 ## Integration checklist
 
-- [ ] Customer token generated server-side per user with a stable `customerRef`
+- [ ] Customer token generated server-side per user (`delegateToken`) with a stable `delegateId`
 - [ ] SDK initialized with `nodeUrl` pointing to correct environment
 - [ ] Component rendered **before** the transfer is submitted to the API
 - [ ] `txCreate` from Withdrawal Assist used as the body for `POST /entities/{entityDID}/tx`

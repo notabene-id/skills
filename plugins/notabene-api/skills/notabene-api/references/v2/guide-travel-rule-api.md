@@ -35,14 +35,14 @@ other files link here.
 2. Exchange them for an access token (OAuth2 client credentials):
 
 ```
-POST https://auth.notabene.id/oauth/token
+POST https://auth.notabene.id/oauth/token        # US: https://us.auth.notabene.id/oauth/token
 Content-Type: application/json
 
 {
   "client_id": "<your_client_id>",
   "client_secret": "<your_client_secret>",
   "grant_type": "client_credentials",
-  "audience": "https://api.eu1.notabene.id"
+  "audience": "https://api.eu1.notabene.id"   // US: https://api.us1.notabene.id
 }
 ```
 
@@ -51,14 +51,15 @@ Response: `{ "access_token": "eyJhbGc...", "expires_in": 86400, "token_type": "B
 
 3. Send `Authorization: Bearer <access_token>` on every request.
 
-| | Production (EU) | Production (US) | Test |
-|---|---|---|---|
-| Base URL | `https://api.eu1.notabene.id` | `https://api.us1.notabene.id` | `https://api.notabene.dev` (unconfirmed) |
-| Token `audience` | `https://api.eu1.notabene.id` | `https://api.us1.notabene.id` (presumed) | `https://api.notabene.dev` (unconfirmed) |
-| Token URL | `https://auth.notabene.id/oauth/token` | `https://auth.notabene.id/oauth/token` | `https://auth.notabene.id/oauth/token` |
+| | EU | US |
+|---|---|---|
+| Base URL | `https://api.eu1.notabene.id` | `https://api.us1.notabene.id` |
+| Token `audience` | `https://api.eu1.notabene.id` | `https://api.us1.notabene.id` |
+| Token URL | `https://auth.notabene.id/oauth/token` | `https://us.auth.notabene.id/oauth/token` |
 
-Use the region your onboarding names. The test host is unconfirmed: `https://api.notabene.dev` is also the v1 test
-host, so check with Notabene which test host serves v2.
+Use the region your onboarding names, and that region's token URL: `auth.notabene.id` answers `403` for the US
+audience. v2 has no separate test host: a sandbox entity uses the same base URL. `https://api.notabene.dev` is the v1
+test host and accepts only v1 tokens.
 
 Almost every path includes `{entityDID}`: your institution's DID (e.g. `did:web:your-vasp.com`).
 

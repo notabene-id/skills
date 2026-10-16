@@ -75,7 +75,7 @@ When reviewing or editing a skill, verify:
     node's OpenAPI says otherwise; its code agrees with the guide).
 - `references/v1/` is written from the node's typed v1 client (`go/pkg/clients/nb/legacy/node/`); `references/v2/`
   can be checked against the node's V2 route declarations (`go/services/node/internal/api/oldnode/`).
-- Facts that could not be confirmed are marked as such in the guides (`references/v1/caveats.md`, the v2 test host).
+- Facts that could not be confirmed are marked as such in the guides (for example `references/v1/caveats.md`).
   Replace the marker once a fact is confirmed; never state a guess as fact.
 
 ### Keep this file current

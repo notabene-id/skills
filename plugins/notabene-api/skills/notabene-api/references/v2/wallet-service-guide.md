@@ -246,10 +246,10 @@ NB_CLIENT_ID=<from notabene dashboard>
 NB_CLIENT_SECRET=<from notabene dashboard>
 NB_ENTITY_DID=did:web:your-service.example.com
 NB_API_URL=https://api.eu1.notabene.id        # or https://api.us1.notabene.id
-NOTABENE_OAUTH_TOKEN_URL=https://auth.notabene.id/oauth/token
+NOTABENE_OAUTH_TOKEN_URL=https://auth.notabene.id/oauth/token  # US: https://us.auth.notabene.id/oauth/token
 NB_OAUTH_AUDIENCE=https://api.eu1.notabene.id  # same host as NB_API_URL
 ```
 
-Production uses your region's host (EU `api.eu1.notabene.id`, US `api.us1.notabene.id`). The test host
-`https://api.notabene.dev` is unconfirmed for v2
-([guide-travel-rule-api.md#authentication](guide-travel-rule-api.md#authentication)); check with Notabene.
+Use your region's host and token URL (EU `api.eu1.notabene.id` with `auth.notabene.id`, US `api.us1.notabene.id` with
+`us.auth.notabene.id`). v2 has no separate test host: sandbox entities use the same base URL
+([guide-travel-rule-api.md#authentication](guide-travel-rule-api.md#authentication)). `api.notabene.dev` is v1 only.

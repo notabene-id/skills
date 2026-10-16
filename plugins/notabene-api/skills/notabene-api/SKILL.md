@@ -25,13 +25,13 @@ Infer it from the codebase, config or credentials before asking. Ask only when n
 | Statuses | `NEW`, `SENT`, `ACK`, `ACCEPTED`, … | `OUTGOING`/`INCOMING`, `AUTHORIZED`, `SETTLED`, … | `Active`, `ReadyToSettle`, `Settled`, … |
 | Webhooks | `notification.transactionUpdated` | `notification.*`, `tap.*` | `transfer.*.v3`, `requirements.*.v3`, `relationship.*.v3` |
 | Amounts | Integer base units, asset symbols | Decimal strings, CAIP-19 | Whole-unit decimal strings, CAIP-19 |
-| Broadcast after | `ACCEPTED` | `AUTHORIZED` | `ReadyToSettle` |
+| Broadcast after | `ACCEPTED`, or `SAVED` (not sent: below threshold, self-hosted or internal) | `AUTHORIZED` | `ReadyToSettle` |
 | Read | [`references/v1/README.md`](references/v1/README.md) | [`references/v2/README.md`](references/v2/README.md) | [`references/v2.1/README.md`](references/v2.1/README.md) |
 
 v2.1's paths start with `/api/v1`. That is the v2.1 platform, not the v1 API: any `/api/v1/…` path means v2.1.
 
-Test hosts are less telling than paths: `api.notabene.dev` is v1's test host and may also serve v2. When a host is
-ambiguous, decide by path shape (`/tx/create` → v1, `/entities/{entityDID}/…` → v2).
+`api.notabene.dev` is v1's test host and accepts only v1 tokens. v2 has no separate test host: a v2 sandbox entity
+uses `api.eu1.notabene.id`.
 
 New integrations go on v2.1 unless Notabene has told the institution otherwise. Existing integrations stay on their
 version. To migrate, read both versions' READMEs and map every call, status and webhook event explicitly.
