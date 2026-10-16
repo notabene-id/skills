@@ -8,14 +8,14 @@ authentication, identifiers, webhook setup and verification, and statuses.
 | Need | Guide |
 |---|---|
 | Outgoing and incoming transfers, PII, authorize/reject, settle | [`guide-travel-rule-api.md`](guide-travel-rule-api.md) |
-| Every endpoint, request and response schema | [`api-reference.md`](api-reference.md) |
+| Endpoints for the flows above, request and response schemas | [`api-reference.md`](api-reference.md) |
 | Every webhook event and payload | [`webhooks.md`](webhooks.md) |
 | Wallet service / custody provider acting as an agent for another institution | [`wallet-service-guide.md`](wallet-service-guide.md) |
 | Embedding Travel Rule UI (withdrawal, deposit, wallet verification) | [`guide-javascript-sdk.md`](guide-javascript-sdk.md) |
 
 **Originator lifecycle:**
 1. `POST /entities/{entityDID}/tx` — create the transfer **before** broadcasting.
-2. On `tap.requirePresentationRequested` → `POST .../transfers/{id}/append` with IVMS101 PII.
+2. On `tap.requirePresentationRequested` → `POST .../tx/{id}/append` with IVMS101 PII.
 3. Wait for `notification.transferStatusChanged` with `toStatus: "AUTHORIZED"`. Never broadcast before it.
 4. `POST .../tx/{id}/settle` with `{ "settlementId": "eip155:{chainId}:tx/{txHash}" }`.
 

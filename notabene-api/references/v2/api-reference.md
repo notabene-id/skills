@@ -23,14 +23,14 @@ OpenAPI 3.1.0, version 1.0.0. Auth, base URL and identifier formats:
 - `{entityDID}` (in almost every path): your institution's DID, e.g. `did:web:vasps.id:jxnl0411:at`. Pattern:
   `^did:([a-z0-9]+):((?:(?:[a-zA-Z0-9._-]|(?:%[0-9a-fA-F]{2}))*:)*(?:[a-zA-Z0-9._-]|(?:%[0-9a-fA-F]{2}))+)((;[a-zA-Z0-9_.:%-]+=[a-zA-Z0-9_.:%-]*)*)(/[^#?]*)?([?][^#]*)?(#.*)?$`
 - All errors (400, 401, 403, 404, 409, 500) share `{ "error": "string", "details": "string | string[]" }`.
-- Note the path prefixes: most endpoints use `/entities/...`; address-ownership uses `/entity/...` (singular); PII
-  endpoints use `/transfers/{id}` where transfer endpoints use `/tx/{id}`.
+- Use the paths below. Deprecated aliases are still served: `/entities/{entityDID}/transfers/...` for most `/tx/...`
+  transfer routes, and a leading `/entity/...` (rewritten to `/entities/...`). Don't build new code on them.
 
 ---
 
 ## Address Ownership
 
-### `POST /entity/{entityDID}/address-ownership/discover`
+### `POST /entities/{entityDID}/address-ownership/discover`
 
 Discover who owns a blockchain address, using relationships, the hashed-address service and blockchain analytics.
 
@@ -158,13 +158,15 @@ Proof `status`: `PENDING`, `CONFIRMED`, `VERIFIED`, `REJECTED`. Proof `type` in 
 | POST | `/entities/{entityDID}/tx/{transferId}/authorize` | Authorize | `202` |
 | POST | `/entities/{entityDID}/tx/{transferId}/reject` | Reject | `200` |
 | POST | `/entities/{entityDID}/tx/{transferId}/settle` | Report on-chain settlement | `202` |
+| POST | `/entities/{entityDID}/tx/{transferId}/append` | Append IVMS101 PII ([PII](#pii)) | `202` |
 | POST | `/entities/{entityDID}/tx/{transferId}/agents` | Add an agent | `202` |
 | POST | `/entities/{entityDID}/tx/{transferId}/agents/replace` | Replace an agent | `202` |
 
 ### `POST /entities/{entityDID}/tx`
 
-Entry point for Travel Rule compliance. Full examples (hosted, unhosted, unmatched deposit):
-[guide-travel-rule-api.md#1-create-a-transfer](guide-travel-rule-api.md#1-create-a-transfer).
+Entry point for Travel Rule compliance. Examples: hosted and unhosted wallet in
+[guide-travel-rule-api.md#1-create-a-transfer](guide-travel-rule-api.md#1-create-a-transfer); unmatched deposit in
+[guide-travel-rule-api.md#4-reconcile-received-transfers](guide-travel-rule-api.md#4-reconcile-received-transfers).
 
 | Field | Required | Validation | Description |
 |---|---|---|---|
@@ -267,8 +269,8 @@ Response `202`.
 
 | Method | Path | Response |
 |---|---|---|
-| GET | `/entities/{entityDID}/transfers/{transferId}/tap-policies` | `{ "policies": [TapPolicy] }` |
-| GET | `/entities/{entityDID}/transfers/{transferId}/tap-policies/{policyId}` | `{ "policy": TapPolicy }` |
+| GET | `/entities/{entityDID}/tx/{transferId}/tap-policies` | `{ "policies": [TapPolicy] }` |
+| GET | `/entities/{entityDID}/tx/{transferId}/tap-policies/{policyId}` | `{ "policy": TapPolicy }` |
 
 ```json
 {
@@ -312,16 +314,24 @@ No body. Response `200`:
 
 ## PII
 
-### `POST /entities/{entityDID}/transfers/{transferId}/append`
+### `POST /entities/{entityDID}/tx/{transferId}/append`
 
-Append IVMS101 PII (Notabene encrypts it). Body: `originator` / `beneficiary` (`{ "@id" }`) and `ivms101` with
-`originator.originatorPerson[]` + `accountNumber`, and/or `beneficiary.beneficiaryPerson[]` + `accountNumber`
-([IVMS101](#ivms101)). Example: [guide-travel-rule-api.md#2-provide-pii-when-requested](guide-travel-rule-api.md#2-provide-pii-when-requested).
+Append IVMS101 PII (Notabene encrypts it). Body:
+
+| Field | Required | Description |
+|---|---|---|
+| `ivms101` | yes | `originator.originatorPerson[]` + `accountNumber[]`, and/or `beneficiary.beneficiaryPerson[]` + `accountNumber[]` ([IVMS101](#ivms101)) |
+| `originator` / `beneficiary` | no | `{ "@id" }` customer references |
+| `agents` | no | Agent objects ([above](#post-entitiesentitydidtx)) to add alongside the PII |
+
+Examples (originator and beneficiary side):
+[guide-travel-rule-api.md#2-provide-pii-when-requested](guide-travel-rule-api.md#2-provide-pii-when-requested).
 Response `202` `{ "message": "Transfer appended successfully with encrypted PII" }`.
 
-### `POST /entities/{entityDID}/transfers/{transferId}/policies/{policyId}/presentation`
+### `POST /entities/{entityDID}/tx/{transferId}/policies/{policyId}/presentation`
 
-Present PII for one policy. Query `skipValidation` (boolean, default false). Body `{ "ivms101": <IVMS101> }`. Response
+Present PII for one policy (`POST .../tx/{transferId}/presentation` presents for every presentation policy). Query
+`skipValidation` (boolean, default false). Body `{ "ivms101": <IVMS101> }`. Response
 `202` `{ "message": "Presentation accepted and processing" }`.
 
 ---
@@ -355,12 +365,14 @@ Present PII for one policy. Query `skipValidation` (boolean, default false). Bod
 | `log` | array? | no | Activity log |
 | `policyEvaluations` | array? | no | Policy evaluation results |
 
-Agent status values: `PROCESSING`, `AUTHORIZED`, `REJECTED`, `SETTLED`, `FAILED`, `REPLACED`. Agent roles: `VASP`,
-`Custodian`, `SettlementAddress`, `SourceAddress`, `Gateway`, `Unknown`.
+Agent status values: `PROCESSING`, `AUTHORIZED`, `REJECTED`, `SETTLED`, `FAILED`, `REPLACED`, `UNREACHABLE`.
+Agent roles: `VASP`, `Custodian`, `SettlementAddress`, `SourceAddress`, `Gateway`, `Unknown`.
 
 ### IVMS101
 
-IVMS 101.2023 structure for originator and beneficiary PII.
+IVMS 101.2023 structure for originator and beneficiary PII. `REQUIRED` applies when the parent object is sent; which
+objects are needed depends on the presentation definition. Complete example:
+[guide-travel-rule-api.md#2-provide-pii-when-requested](guide-travel-rule-api.md#2-provide-pii-when-requested).
 
 ```
 ivms101:

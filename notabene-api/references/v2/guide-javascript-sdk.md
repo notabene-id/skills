@@ -59,12 +59,12 @@ Reference: [devx.notabene.id/docs/customertoken](https://devx.notabene.id/docs/c
 import Notabene from '@notabene/javascript-sdk';
 
 const notabene = new Notabene({
-  nodeUrl: 'https://api.eu1.notabene.id',  // your API environment
+  nodeUrl: 'https://api.eu1.notabene.id',  // your region's API host (EU here; US: api.us1)
   authToken: customerToken,                 // from your backend — NOT your API access token
 });
 ```
 
-The SDK uses `nodeUrl` to determine which environment the embedded UI connects to (`production` vs `development`). Always use `https://api.eu1.notabene.id` for production.
+The SDK uses `nodeUrl` to determine which environment the embedded UI connects to (`production` vs `development`). For production use your region's host: `https://api.eu1.notabene.id` (EU) or `https://api.us1.notabene.id` (US).
 
 ---
 

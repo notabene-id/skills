@@ -1,6 +1,7 @@
 # Travel Rule API Guide
 
-The Notabene **v2** Transact API: base URL `https://api.eu1.notabene.id`, paths under `/entities/{entityDID}/...`.
+The Notabene **v2** Transact API: base URL `https://api.eu1.notabene.id` (EU) or `https://api.us1.notabene.id` (US),
+paths under `/entities/{entityDID}/...`.
 This guide covers the APIs strictly required to create outgoing transfers, handle incoming transfers and manage the
 authorization lifecycle. It is the single home for authentication, identifiers, webhook mechanics and statuses; the
 other files link here.
@@ -115,7 +116,7 @@ Every webhook uses the same envelope:
   "payload": {
     "id": "423ae44a-...",
     "for": "did:web:your-domain.com",
-    "fromStatus": "PENDING",
+    "fromStatus": "OUTGOING",
     "toStatus": "AUTHORIZED"
   },
   "version": "1.0.0"
@@ -128,7 +129,8 @@ Every webhook uses the same envelope:
 | `payload` | All event data. `payload.id` is the transfer id (no top-level `id`); `payload.for` is the DID of the entity the webhook is for. |
 | `version` | Currently always `"1.0.0"` |
 
-Callback URLs in payloads (`callbackUrl`, `authorizeCallbackUrl`, ...) are **relative paths**: prepend the API base URL.
+Callback URLs in payloads (`callbackUrl`, `authorizeCallbackUrl`, ...) are **relative paths**: prepend the API base URL
+and otherwise call them as given, even when they use the deprecated `/transfers/...` prefix.
 
 ### Delivery Guarantees
 
@@ -238,7 +240,7 @@ Optional fields (`settlementId`, `transactionValue`, `blockchainAnalyticsAlias`,
 `https://pd.notabene.id/ivms101/v2/US-3000.json`) say which IVMS101 fields are required. Payload:
 [webhooks.md](webhooks.md#tap-policy-requirement-events).
 
-Append PII (Notabene-managed encryption): `POST /entities/{entityDID}/transfers/{transferId}/append`
+Append PII (Notabene-managed encryption): `POST /entities/{entityDID}/tx/{transferId}/append`
 
 ```json
 {
@@ -251,18 +253,31 @@ Append PII (Notabene-managed encryption): `POST /entities/{entityDID}/transfers/
           "name": { "nameIdentifier": [{
             "primaryIdentifier": "Smith", "secondaryIdentifier": "John",
             "naturalPersonNameIdentifierType": "LEGL" }] },
-          "dateAndPlaceOfBirth": { "dateOfBirth": "1990-01-15" },
-          "geographicAddress": [{ "country": "US", "addressType": "HOME" }]
+          "dateAndPlaceOfBirth": { "dateOfBirth": "1990-01-15", "placeOfBirth": "Anytown, US" },
+          "geographicAddress": [{
+            "addressType": "HOME", "streetName": "Main Street", "buildingNumber": "123",
+            "postCode": "12345", "townName": "Anytown", "country": "US" }]
         }
       }],
       "accountNumber": ["did:pkh:eip155:1:0xSourceAddress"]
+    },
+    "beneficiary": {
+      "beneficiaryPerson": [{
+        "naturalPerson": {
+          "name": { "nameIdentifier": [{
+            "primaryIdentifier": "Doe", "secondaryIdentifier": "Jane",
+            "naturalPersonNameIdentifierType": "LEGL" }] }
+        }
+      }],
+      "accountNumber": ["did:pkh:eip155:1:0xSettlementAddress"]
     }
   }
 }
 ```
 
-Returns `202`. Requirements vary by jurisdiction. Full structure:
-[api-reference.md#ivms101](api-reference.md#ivms101).
+Returns `202`. Send only what the presentation definition asks for; requirements vary by jurisdiction. A beneficiary
+answering a request for its own customer's data sends just the `ivms101.beneficiary` object (`beneficiaryPerson` +
+`accountNumber`). Full structure: [api-reference.md#ivms101](api-reference.md#ivms101).
 
 ### 3. Settle the Transfer
 
@@ -372,13 +387,14 @@ Core lifecycle:
 | `SETTLED` | Settled on-chain |
 | `REVERTED` | Reverted (terminal) |
 
-Full enum on the Transfer schema: `OUTGOING`, `INCOMING`, `REJECTED`, `AUTHORIZED`, `FLAGGED`, `SETTLED`,
-`FLAGGED-SETTLEMENT`, `REVERTED`, `REVERT-AUTHORIZED`, `REVERT-REJECTED`, `REVERT-FLAGGED`, `FROZEN`, `CLEARED`,
-`REVERT-REQUESTED`. Webhook examples also show `PENDING` as a `fromStatus`.
+Full enum on the Transfer schema: `OUTGOING`, `INCOMING`, `AWAITING-YOURS`, `AWAITING-COUNTERPARTY`, `REJECTED`,
+`AUTHORIZED`, `FLAGGED`, `SETTLED`, `FLAGGED-SETTLEMENT`, `REVERTED`, `REVERT-AUTHORIZED`, `REVERT-REJECTED`,
+`REVERT-FLAGGED`, `REVERT-REQUESTED`, `FROZEN`, `CLEARED`. `PENDING`, seen in some webhook examples, is **not** a
+transfer status; don't branch on it.
 
 Per-agent status (`notification.transferAgentStatusChanged`): `PROCESSING`, `AUTHORIZED`, `REJECTED`, `SETTLED`,
-`FAILED`, `REPLACED`. An individual agent authorizing is **not** enough to settle; wait for the transfer-level
-`AUTHORIZED`.
+`FAILED`, `REPLACED`, `UNREACHABLE`. An individual agent authorizing is **not** enough to settle; wait for the
+transfer-level `AUTHORIZED`.
 
 ---
 

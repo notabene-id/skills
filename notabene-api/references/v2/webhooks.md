@@ -9,8 +9,8 @@ Catalogue of every webhook event. Mechanics live in the main guide:
   [guide-travel-rule-api.md#delivery-guarantees](guide-travel-rule-api.md#delivery-guarantees)
 
 Every `payload` carries `for` (DID of the entity the webhook is for) and `id` (transfer id); the tables list the other
-fields. Callback URLs are relative paths: prepend the API base URL. Respond `2xx` once processed; `4xx` is not retried,
-`5xx` is retried.
+fields. Callback URLs are relative paths: prepend the API base URL and call them as given (some still use the
+deprecated `/transfers/...` prefix). Respond `2xx` once processed; `4xx` is not retried, `5xx` is retried.
 
 ## Table of Contents
 
@@ -61,7 +61,7 @@ Notabene needs an action from you before the transfer can continue.
 | `message` | Fires when | Key payload fields | What to do |
 |---|---|---|---|
 | `tap.requirePresentationRequested` | Counterparty's jurisdiction requires Travel Rule data | `originatorAgentID`, `beneficiaryAgentID`?, `originatorPresentationDefinition`, `beneficiaryPresentationDefinition`?, `callbackUrl`, `encryptionKey`?, `policyId` | Send IVMS101 PII via `callbackUrl` / [append](api-reference.md#pii) |
-| `tap.requireAuthorizationRequested` | Policy, risk or business rules require an approve/reject decision | `originatorAgentID`, `beneficiaryAgentID`, `authorizeCallbackUrl`, `rejectCallbackUrl`, `purpose`? | POST to one of the two callbacks |
+| `tap.requireAuthorizationRequested` | Policy, risk or business rules require an approve/reject decision | `originatorAgentID`, `beneficiaryAgentID`, `authorizeCallbackUrl`, `rejectCallbackUrl`, `purpose`? | POST to one callback: authorize with `{}`; reject with `{ "reason", "comment" }` ([reasons](guide-travel-rule-api.md#3-reject-a-transfer); `comment` required for `OTHER`) |
 | `tap.requireRelationshipConfirmationRequested` | An address in the transfer must be confirmed as belonging to you / your client | `from` (counterparty agent DID), `originatorAgentID`, `beneficiaryAgentID`, `confirmCallbackUrl`, `purpose`? | Confirm via `confirmCallbackUrl` (the relationships confirm endpoint); don't confirm addresses that aren't yours |
 
 `?` = optional. `beneficiary*` fields on `requirePresentationRequested` are present only when beneficiary data is

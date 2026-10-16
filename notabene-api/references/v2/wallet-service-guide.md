@@ -140,10 +140,10 @@ addresses also satisfy most relationship confirmations automatically.
 3. **Authorize** with an empty body: `POST /entities/{entityDID}/tx/{transferId}/authorize` `{}`.
 4. **Wait for the transfer-level `AUTHORIZED`** (`notification.transferStatusChanged`), meaning all parties including
    your client's compliance team approved.
-5. **Settle:** parse the settlement address (CAIP-10, e.g. `eip155:42431:0xRecipient`) and asset (CAIP-19, e.g.
-   `eip155:42431/erc20:0xTokenAddress`), execute ERC-20 `transfer(to, amount)`, wait for confirmation. Claim the
-   transfer atomically first ([below](#preventing-double-settlement)).
-6. **Report:** `POST .../tx/{transferId}/settle` with `{ "settlementId": "eip155:42431:tx/0xTransactionHash" }`.
+5. **Settle:** read `settlementAddress` (CAIP-10, e.g. `eip155:1:0xRecipient`), `asset` (CAIP-19, e.g. USDC
+   `eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`) and `amount` from the transfer, execute the on-chain
+   transfer, wait for confirmation. Claim the transfer atomically first ([below](#preventing-double-settlement)).
+6. **Report:** `POST .../tx/{transferId}/settle` with `{ "settlementId": "eip155:1:tx/0xTransactionHash" }`.
 
 ---
 
@@ -164,7 +164,7 @@ addresses also satisfy most relationship confirmations automatically.
   "ref": "your-unique-deposit-reference",
   "originator": { "@id": "did:pkh:eip155:1:0xSenderAddress" },
   "beneficiary": { "@id": "did:web:client-vasp-did" },
-  "asset": "eip155:1/erc20:0xTokenAddress",
+  "asset": "eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
   "amount": "100.00",
   "agents": [{ "@id": "did:web:your-service.example.com", "role": "VASP", "for": "did:web:client-vasp-did",
                "policies": [{ "@type": "REQUIRE_AUTHORIZATION" }] }],
@@ -182,20 +182,24 @@ From `GET /entities/{entityDID}/tx/{transferId}`:
 
 ```json
 {
-  "id": "transfer-uuid",
-  "amount": "5000",
-  "supportedAssets": ["eip155:42431/erc20:0x...", "USD"],
-  "fallbackSettlementAddresses": ["eip155:42431:0x..."],
-  "agents": [{ "agent": { "@id": "did:web:..." }, "for": "did:web:..." }],
-  "originator": { "@id": "mailto:..." },
-  "beneficiary": { "@id": "mailto:..." }
+  "transfer": {
+    "@id": "transfer-uuid",
+    "status": "AUTHORIZED",
+    "asset": "eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "amount": "100.00",
+    "settlementAddress": "eip155:1:0xRecipient",
+    "agents": [{ "agent": { "@id": "did:web:..." }, "for": "did:web:...", "role": "Custodian" }],
+    "originator": { "@id": "mailto:..." },
+    "beneficiary": { "@id": "mailto:..." }
+  }
 }
 ```
 
-- `amount`: human-readable (e.g. `"5000"` for $50.00 with 6-decimal tokens)
-- `supportedAssets`: CAIP-19 ids the transfer supports (may include fiat such as `"USD"`)
-- `fallbackSettlementAddresses`: CAIP-10 settlement addresses, updated as parties provide them
+- `amount`: decimal string in whole token units (`"100.00"` = 100 USDC); convert to base units with the token's
+  decimals when building the on-chain transaction
+- `asset`: CAIP-19; `settlementAddress`: CAIP-10 destination; `memoTag`: destination tag where the chain needs one
 - `agents`: the chain for role determination
+- Full schema: [api-reference.md#transfer](api-reference.md#transfer)
 
 ---
 
@@ -221,8 +225,9 @@ function claimForSettlement(transferId):
 
 ## Common Pitfalls
 
-1. **Authorizing with asset/address in the body.** Wallet services authorize with `{}`; authorization takes no asset or
-   address.
+1. **Sending settlement details when authorizing.** The authorize body accepts optional `settlementAddress` and
+   `memoTag` ([api-reference](api-reference.md#post-entitiesentitydidtxtransferidauthorize)); a wallet service acting
+   as an agent sends `{}`.
 2. **Settling on a per-agent signal.** `notification.transferAgentStatusChanged` fires when one agent authorizes; it is
    not enough. Wait for `notification.transferStatusChanged` → `AUTHORIZED`.
 3. **Non-idempotent handlers.** Duplicate deliveries cause duplicate records, duplicate on-chain transfers or nonce
@@ -240,9 +245,11 @@ function claimForSettlement(transferId):
 NB_CLIENT_ID=<from notabene dashboard>
 NB_CLIENT_SECRET=<from notabene dashboard>
 NB_ENTITY_DID=did:web:your-service.example.com
-NB_API_URL=https://api.notabene.dev
+NB_API_URL=https://api.eu1.notabene.id        # or https://api.us1.notabene.id
 NOTABENE_OAUTH_TOKEN_URL=https://auth.notabene.id/oauth/token
-NB_OAUTH_AUDIENCE=https://api.notabene.dev
+NB_OAUTH_AUDIENCE=https://api.eu1.notabene.id  # same host as NB_API_URL
 ```
 
-Production: `NB_API_URL` and `NB_OAUTH_AUDIENCE` = `https://api.eu1.notabene.id`.
+Production uses your region's host (EU `api.eu1.notabene.id`, US `api.us1.notabene.id`). The test host
+`https://api.notabene.dev` is unconfirmed for v2
+([guide-travel-rule-api.md#authentication](guide-travel-rule-api.md#authentication)); check with Notabene.
