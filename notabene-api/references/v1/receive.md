@@ -10,7 +10,8 @@ Statuses and the verb table are in [Getting started](getting-started.md); pitfal
 1. Register deposit addresses with `POST /address/registerCustomer` (enables routing and autoConfirm).
 2. On a webhook with `status: "SENT"` and your DID in `beneficiaryVASPdid`, check the destination is yours, then
    `POST /tx/confirm?id=<id>` → `ACK`.
-3. Re-read `GET /tx/info?id=<id>` for the originator PII (escrowed until you confirm).
+3. Re-read `GET /tx/info?id=<id>` for the originator PII under `ivms101.originator` (or its `pii` mirror; escrowed
+   until you confirm).
 4. `POST /tx/accept?id=<id>` → `ACCEPTED`, or `POST /tx/decline` with `{ "id", "reason" }` → `DECLINED`.
 
 ## Answering a transaction
@@ -19,25 +20,31 @@ Statuses and the verb table are in [Getting started](getting-started.md); pitfal
 2. **Confirm** with `POST /tx/confirm?id=<id>` (no body): `SENT → ACK`, asserting your institution controls
    `transactionBlockchainInfo.destination`. Confirm is not accept; send it only after checking the address is your
    customer's. An autoConfirm rule does it for addresses in your address book.
-3. **Re-read after `ACK`.** Before you confirm, the originator block can be `{}` for you.
+3. **Re-read after `ACK`.** Before you confirm, `ivms101.originator` holds placeholder persons with empty names: treat
+   the PII as present only when a person has a non-empty name identifier (`primaryIdentifier` / `legalPersonName`).
 4. **Decide** (each verb returns the updated transaction):
    - `POST /tx/accept?id=<id>` (no body), from `ACK` only. The status read can lag the confirm by seconds; retry a
      refused accept briefly.
-   - `POST /tx/decline`, or `POST /tx/notReady` (can't decide yet → `NOT_READY`), with `{ "id", "reason" }`.
+   - `POST /tx/decline` (also legal from `SENT`, `SAVED`, `INCOMPLETE`), or `POST /tx/notReady` (can't decide yet →
+     `NOT_READY`), with `{ "id", "reason" }`.
 5. **Alternatives at `SENT` only:**
    - `POST /tx/reject` → `REJECTED`, body `{ "id": "6f1c…-uuid", "reason": "unknown destination address" }`.
    - `POST /tx/redirect?id=<id>&to=<did>` hands it to another institution: status stays `SENT`, only
-     `beneficiaryVASPdid` changes. There is no originator redirect.
+     `beneficiaryVASPdid` changes. Confirmed at `SENT`; one source also allows `NEW`, `MISSING_BENEFICIARY_DATA`,
+     `WAITING_FOR_INFORMATION` (unconfirmed). The originator side has no redirect verb: its institution is swapped
+     with `/tx/update` `originatorVASPdid` ([Send § 5](send.md#5-record-the-on-chain-hash)).
 
 ### Bulk actions
 
-`POST /tx/bulk` applies one action to every transaction between two institutions, optionally per address:
+`POST /tx/bulk` applies one action to every transaction between two institutions, optionally narrowed by
+`originAddress` / `destinationAddress`:
 
 ```json
 {
   "action": "accept",
   "originatorVASPdid": "did:ethr:0xaaaa…",
   "beneficiaryVASPdid": "did:ethr:0xbbbb…",
+  "originAddress": "0xOriginAddress",
   "destinationAddress": "0xBeneficiaryAddress",
   "reason": "…"
 }
@@ -79,15 +86,17 @@ callers only; omit it.
 - **No match:** a new transaction at `INCOMPLETE`. Notabene resolves the originator from `origin` when it can; without
   that or `originatorVASPdid`, it may have no originator and stay invisible to the institution that owes the data.
 
-Then:
+Then, depending on who sends `/tx/update` first (the resulting status is keyed on the caller; party data is
+accepted only at `INCOMPLETE` or `MISSING_BENEFICIARY_DATA`):
 
-1. The **originator institution** adds its data with `POST /tx/update` while `INCOMPLETE` (originator data is accepted
-   only at `INCOMPLETE` or `MISSING_BENEFICIARY_DATA`); you read it in cleartext via `/tx/info`. (An originator update
-   yields `NEW`, and the originator must `/tx/approve`.)
-2. **You** send beneficiary persons with `/tx/update`. Valid beneficiary data **completes the notify flow**: v1 sets
-   `SENT`, autoConfirm moves it to `ACK` a second later, and later originator updates get a 400. **Let the originator
-   go first**, or send both sides yourself in one update.
-3. From `ACK`, accept as usual.
+- **Originator first (the happy path):** the originator institution's update yields `NEW`; it `/tx/approve`s →
+  `SENT`, autoConfirm → `ACK`, you accept → `ACCEPTED`. You read its persons in cleartext under `ivms101.originator`
+  via `/tx/info`.
+- **You first:** valid beneficiary data **completes the notify flow**: v1 sets `SENT`, autoConfirm moves it to `ACK`
+  a second later, and the originator's later update gets a 400, so its persons never arrive. **Let the originator go
+  first**, or send both sides (`originator` and `beneficiary`, top-level in the request) yourself in one update.
+
+From `ACK`, accept as usual.
 
 The `txHash` **is** the settlement; a notify transaction has no further settlement step.
 
@@ -110,4 +119,5 @@ Registered addresses let Notabene route incoming transfers to you and let autoCo
 | `GET /v1/addresses?vasp_did=&source=ADDRESS_GRAPH[&source_type=INTERNAL\|EXTERNAL&page=&per_page=]` | `{ pagination: { page, per_page, total }, metadata: { source }, data: [{ address, owner_vasp_did, customer_did, customer_ref }] }` |
 | `DELETE /v1/addresses?vasp_did=&addresses=<a1>,<a2>` | `202 { message }` |
 | `GET /address/upload/{vaspDID}` | Presigned `{ uploadUrl, uploadFields[] }`: POST your CSV as multipart with every upload field verbatim. |
-| `POST` / `DELETE /integrations/{vaspDID}/address-query-webhook` | Body `{ "url", "params": "?k=v" }` (leading `?`) registers a URL Notabene calls to ask whether an address is yours; response has a `secret`. |
+| `POST /integrations/{vaspDID}/address-query-webhook` | Body `{ "url", "params": "?k=v" }` (leading `?`) registers a URL Notabene calls to ask whether an address is yours; response has a `secret`. |
+| `DELETE /integrations/{vaspDID}/address-query-webhook` | No body; returns `{ isDeleted, message }`. |

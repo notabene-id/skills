@@ -18,7 +18,8 @@ place: [Caveats](caveats.md).
   the current API uses `entityDID` (`did:web`) in resource paths under `/entities/{entityDID}/…`.
 - Verb paths: `/tx/create`, `/tx/info?id=`, `/tx/confirm?id=`, `/tx/notify`, `/webhook`.
 - Fields `originatorVASPdid` / `beneficiaryVASPdid` (lowercase `did`); IVMS in `originatorPersons[]` /
-  `beneficiaryPersons[]`; statuses `NEW`, `SENT`, `ACK`, `ACCEPTED`, …
+  `beneficiaryPersons[]` (top-level `originator` / `beneficiary` in requests, under `ivms101` in responses);
+  statuses `NEW`, `SENT`, `ACK`, `ACCEPTED`, …
 - Webhook bodies `{ "message": "notification.transactionUpdated", "payload": { "transaction" }, … }`; error bodies
   `{ "err": { … } }`.
 
@@ -30,8 +31,9 @@ place: [Caveats](caveats.md).
 | QA / staging (EU) | `https://api-qa.eu.notabene.dev` |
 | "test" (v1's sandbox) | `https://api.notabene.dev` |
 
-Paths hang off the base URL (`https://api.notabene.id/tx/create`); only address endpoints carry `/v1`
-(`/v1/addresses`). Every endpoint needs a bearer token from the client-credentials grant:
+Paths hang off the base URL (`https://api.notabene.id/tx/create`); the `/v1/addresses…` endpoints carry `/v1`,
+other address calls (`/address/registerCustomer`, `/address/upload/{vaspDID}`) don't. Every endpoint needs a bearer
+token from the client-credentials grant:
 
 ```
 POST <token URL>
@@ -65,7 +67,7 @@ Returned by `/tx/create`, `/tx/info`, every verb, and every webhook.
 | Field | Notes |
 | --- | --- |
 | `id` | Notabene's UUID; used on every later call. |
-| `transactionRef` | Your reference, echoed on every webhook. Correlate on it. |
+| `transactionRef` | The originator's reference. Redacted from webhooks delivered to the beneficiary side: originators may correlate on it, beneficiaries on `id`. |
 | `status`, `transactionType` | See [statuses](#statuses). Type: `BELOW_THRESHOLD`, `NON_CUSTODIAL`, `TRAVELRULE`, `UNKNOWN`. |
 | `transactionAsset` | **Symbol** (`ETH`, `USDC`). Create also accepts `{ "caip19" }` or `{ "coingeckoId", "network" }`. |
 | `transactionAmount` | String, **integer in the smallest unit**: `"1000000000000000000"` = 1 ETH. |
@@ -73,15 +75,18 @@ Returned by `/tx/create`, `/tx/info`, every verb, and every webhook.
 | `originatorDid`, `beneficiaryDid` | Customer IRIs (lowercase `id`); may be `did:email:…`. |
 | `originatorVASPdid`, `beneficiaryVASPdid` | The two institutions. |
 | `transactionBlockchainInfo` | `{ "txHash", "origin", "destination" }`; `destination` required on create. |
-| `originator`, `beneficiary` | IVMS 101 person blocks (below). |
+| `ivms101` | IVMS 101 envelope (below): the persons live in `ivms101.originator` / `ivms101.beneficiary`. |
 | `originatorProof`, `beneficiaryProof` | Ownership proof (below). |
 | `actions` | Audit log `{ "hash", "issuerDID", "action", "actionData" }`. |
 
-Other fields: `chargedQuantity`; `ivms101`, `ivms101Encrypted`, `pii` (alternate PII forms); `protocol` (`TRLight`,
-`TRP`, `OpenVASP`) and `protocolData` (`{ "trLightData": { "notificationEmails" } }`); `comments`; `isPayout`
-(payments, ignore).
+Other fields: `chargedQuantity`; `pii` (mirror of `ivms101`, same shape; read whichever is present) and
+`ivms101Encrypted`; `protocol` (`TRLight`, `TRP`, `OpenVASP`) and
+`protocolData` (`{ "trLightData": { "notificationEmails" } }`); `comments`; `isPayout` (payments, ignore).
 
 ### IVMS 101 envelope
+
+A response has **no top-level `originator` / `beneficiary`**: read the persons from `ivms101` (or its `pii` mirror).
+Request bodies (`/tx/create`, `/tx/update`) take `originator` / `beneficiary` at the top level instead. The envelope:
 
 ```json
 {
@@ -124,7 +129,7 @@ Ownership proofs, selected by `type` (relevant for self-hosted destinations; val
 | `SAVED` | Stored, not sent (below-threshold creates park here; no `SENT` webhook). |
 | `NEW` | Awaiting the originator's approval. |
 | `MISSING_BENEFICIARY_DATA` | Created without required beneficiary data; still approvable, accepts `/tx/update` data. |
-| `WAITING_FOR_INFORMATION` | Waiting for party data; treat like `INCOMPLETE`. |
+| `WAITING_FOR_INFORMATION` | Waiting for party data. Not exercised; for `/tx/update` it is originator-only, unlike `INCOMPLETE`. |
 | `INCOMPLETE` | `/tx/notify` deposit without originator data. |
 | `SENT` | Delivered; awaiting the beneficiary's confirm, reject or redirect. |
 | `ACK` | Beneficiary confirmed it controls the destination; awaiting accept or decline. |
@@ -132,8 +137,9 @@ Ownership proofs, selected by `type` (relevant for self-hosted destinations; val
 | `REJECTED`, `DECLINED`, `CANCELLED` | Terminal: rejected at `SENT`, declined after review, cancelled by originator. |
 | `NOT_READY` | Beneficiary called `/tx/notReady`. |
 
-Happy paths: `NEW → SENT → ACK → ACCEPTED`; deposit notification `INCOMPLETE → SENT → ACK → ACCEPTED`. Log and ignore
-unknown statuses (e.g. `MERGED`).
+Happy paths: `NEW → SENT → ACK → ACCEPTED`; deposit notification, originator data first,
+`INCOMPLETE → NEW → (approve) SENT → ACK → ACCEPTED` ([both orders](receive.md#deposit-first-txnotify)). Log and
+ignore unknown statuses (e.g. `MERGED`).
 
 ## Who may call which verb
 
@@ -142,11 +148,11 @@ unknown statuses (e.g. `MERGED`).
 | `POST /tx/approve?id=` | originator | `NEW`, `MISSING_BENEFICIARY_DATA` | `SENT` |
 | `POST /tx/confirm?id=` | beneficiary | `SENT` | `ACK` |
 | `POST /tx/reject` | beneficiary | `SENT` | `REJECTED` |
-| `POST /tx/redirect?id=&to=` | beneficiary | `SENT` | Status unchanged; `beneficiaryVASPdid` becomes `to` |
+| `POST /tx/redirect?id=&to=` | beneficiary | `SENT` (one source also lists `NEW`, `MISSING_BENEFICIARY_DATA`, `WAITING_FOR_INFORMATION`; unconfirmed) | Status unchanged; `beneficiaryVASPdid` becomes `to` |
 | `POST /tx/accept?id=` | beneficiary | `ACK` (map also lists `SENT`, `SAVED`, `INCOMPLETE`; `SENT` is **refused** in practice) | `ACCEPTED` |
 | `POST /tx/decline` | beneficiary | `ACK`, `SENT`, `SAVED`, `INCOMPLETE` | `DECLINED` |
-| `POST /tx/cancel` | originator | most non-terminal | `CANCELLED` |
-| `POST /tx/update` (`txHash`) | either | any | Records the hash |
+| `POST /tx/cancel` | originator | non-terminal; can be refused at `SENT` / `ACK` (then only the beneficiary's decline ends it) | `CANCELLED` |
+| `POST /tx/update` (`txHash`) | either in `INCOMPLETE`, `MISSING_BENEFICIARY_DATA`, `SAVED`; originator only in other non-terminal statuses (beneficiary limited to `comment`) | any, incl. `ACCEPTED` | Records the hash |
 | `POST /tx/update` (party data) | depends | `INCOMPLETE`, `MISSING_BENEFICIARY_DATA` (also `SAVED`) | Re-validated; may move status ([deposit flow](receive.md#deposit-first-txnotify)) |
 
 Institution **rules** act asynchronously: an outgoing *approve* rule advances `NEW → SENT` during `/tx/create`; a

@@ -84,7 +84,7 @@ Optional:
 | `beneficiaryVASPdid` | Omit it, or send `beneficiaryVASPname` / `beneficiaryVASPwebsite`, when the counterparty is unknown. |
 | `originatorDid`, `beneficiaryDid`, `originatorRef`, `beneficiaryRef` | Your customer identifiers. |
 | `transactionAssetDecimals`, `network` | Asset precision and network. |
-| `customAssetPrice` | `{ priceUSD, decimals, price, currency }`; only for assets Notabene can't price ([Caveats](caveats.md)). |
+| `customAssetPrice` | oneOf `{ "priceUSD": 2.5, "decimals": 18 }` or `{ "price", "currency" }` (feature-flagged: use `priceUSD`); only for assets Notabene can't price ([Caveats](caveats.md)). |
 | `originatorProof`, `beneficiaryProof` | Ownership proofs. |
 | `pii`, `encrypted` | PII as an IVMS-shaped block or an encrypted string. |
 | `protocol`, `targetProtocol`, `notificationEmail` | `targetProtocol: "GTR"` routes to GTR; `notificationEmail` for TRLight. |
@@ -116,32 +116,38 @@ Watch `notification.transactionUpdated` ([Webhooks](webhooks.md)) or poll `GET /
 yet confirmed (a changed `beneficiaryVASPdid` means it was redirected; re-evaluate). `ACK`: confirmed, decision
 pending. `ACCEPTED`: go. `REJECTED` / `DECLINED`: do not broadcast.
 
-v1 has no separate "authorized" status: `ACCEPTED` is the beneficiary's positive decision, and Notabene's own bridge
-settles only then. Broadcasting earlier, or to an unknown/unreachable counterparty, is your compliance team's policy
-call; the API doesn't block it.
+v1 has no separate "authorized" status: `ACCEPTED` is the beneficiary's positive decision. **Never broadcast before
+`ACCEPTED`**: the API doesn't block it, but Notabene's own bridge settles only then.
 
 ## 5. Record the on-chain hash
 
-After broadcasting, `POST /tx/update` (allowed in any status):
+After broadcasting, `POST /tx/update` as the originator (allowed after `ACCEPTED`; the beneficiary may set `txHash`
+only in `INCOMPLETE`, `MISSING_BENEFICIARY_DATA`, `SAVED`):
 
 ```json
 { "id": "6f1c…-uuid", "txHash": "0x9c1d…" }
 ```
 
-`/tx/update` also takes `destination`, `origin`, `beneficiaryVASPdid`, `beneficiaryVASPname`, `originator`,
-`beneficiary`, `originatorProof`, `beneficiaryProof`, `pii`, `isNonCustodial`, `comment`, `originatorNameHash`,
-`beneficiaryNameHash`, `skipBeneficiaryDataValidation` to complete data while it is still collecting it. Omit keys you
-don't mean to change (`""` clears a field), and re-read to verify (it can return `200` without effect).
+`/tx/update` also takes `destination`, `origin`, `originatorVASPdid`, `beneficiaryVASPdid`, `beneficiaryVASPname`,
+`originatorDid`, `beneficiaryDid`, `originatorRef`, `beneficiaryRef`, `originator`, `beneficiary` (top-level in the
+request, unlike the `ivms101` response), `originatorProof`, `beneficiaryProof`, `pii`, `isNonCustodial`, `comment`,
+`originatorNameHash`, `beneficiaryNameHash`, `skipBeneficiaryDataValidation`, `notificationEmail`, `protocol`,
+`targetProtocol`, `onBehalfOfMyself`, `blockchainTransactionTimestamp`. Party data is accepted only at `INCOMPLETE` /
+`MISSING_BENEFICIARY_DATA`. `originatorVASPdid` swaps the originator institution (refused once `ACCEPTED`,
+`DECLINED` or `REJECTED`). Omit keys you don't mean to change (`""` clears a field), and re-read to verify (it can
+return `200` without effect).
 
 ## 6. Cancel
 
-`POST /tx/cancel`, with snake_case `vasp_did`:
+`POST /tx/cancel`, with optional snake_case `vasp_did`:
 
 ```json
 { "id": "6f1c…-uuid", "vasp_did": "did:ethr:0xaaaa…", "reason": "customer cancelled withdrawal" }
 ```
 
-Cancelling after `ACCEPTED` is illegal; re-read the status first.
+Cancel before the beneficiary acts: it can be refused at `SENT` / `ACK` (seen on deposit-notify transactions), where
+only the beneficiary can still end the transaction (`/tx/decline`), and it is illegal after `ACCEPTED`. Re-read the
+status first.
 
 ## `/tx/updateTR`
 

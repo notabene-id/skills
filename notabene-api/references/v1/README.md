@@ -17,8 +17,8 @@ unless an auto-approve rule does it (`NEW` → `SENT`) → wait for the benefici
 `ACCEPTED`) → broadcast only after `ACCEPTED` → record the hash with `POST /tx/update`.
 
 **Beneficiary:** register deposit addresses → on `SENT`, `/tx/confirm` the address (→ `ACK`) or `/tx/reject` →
-`/tx/accept` or `/tx/decline` (only from `ACK`; confirming is not accepting). A deposit seen on-chain first is reported
-with `POST /tx/notify`, whose hash is the settlement.
+`/tx/accept` (only from `ACK`; confirming is not accepting) or `/tx/decline` (from `ACK`, `SENT`, `SAVED`,
+`INCOMPLETE`). A deposit seen on-chain first is reported with `POST /tx/notify`, whose hash is the settlement.
 
 **Gotchas:** amounts are integer base units (`"1000000000000000000"` = 1 ETH), not decimals; a 200 from `/tx/update` can
 be a silent no-op and `/tx/info` answers an empty 200 for a transaction you cannot see, so re-read and check; webhooks

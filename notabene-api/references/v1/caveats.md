@@ -15,7 +15,7 @@ succeed silently on transactions you can't see; omit keys rather than send `""`;
 1. **Amounts are integer base units.** `transactionAmount` is a string in the smallest unit (wei, satoshi, 10^-6 for
    USDC): `"1000000000000000000"` is 1 ETH. Notabene's own v1↔current bridge multiplies by 10^decimals into v1 and
    divides out. `amountInLocalCurrency.amountInLocalCurrency` is a plain JSON fiat number: parse as decimal, not
-   float. Absurd exponents like `1e2000000000` are rejected.
+   float.
 2. **Assets are symbols** (`ETH`, `USDC`), not CAIP-19, unless you use the `{ "caip19": … }` form. Send
    `customAssetPrice` only for assets Notabene can't price: its `{ price, currency }` form is feature-flagged, accepts
    only `USD` or `EUR`, and can fail the whole create.
@@ -34,7 +34,8 @@ succeed silently on transactions you can't see; omit keys rather than send `""`;
 9. **Omit, don't blank.** An empty-string DID on `/tx/update` clears the stored value; an empty `txHash` on
    `/tx/notify` fails validation.
 10. **PII escrow.** Originator PII is encrypted to the originator institution's escrow key and released to the
-    beneficiary only after it confirms (until then the block is `{}` for it). Cleartext you post is stored encrypted
+    beneficiary only after it confirms (until then `ivms101.originator` holds placeholder persons with empty names:
+    check for a non-empty name identifier, not for presence). Cleartext you post is stored encrypted
     (IPFS-backed) and even `/tx/list?decrypt=true` doesn't resolve every field: keep your own copy of what you sent.
 11. **Idempotency is yours.** `/tx/create` has no idempotency key. Use a unique `transactionRef` and, before retrying a
     timed-out create, check `GET /tx/list?vaspDID=…&transactionRef=…`. Webhooks are at-least-once.
@@ -51,8 +52,9 @@ succeed silently on transactions you can't see; omit keys rather than send `""`;
 - **Token URL.** Kept in a secret; `https://auth.notabene.id/oauth/token` is inferred from the production Auth0 issuer
   (`https://auth.notabene.id/`; QA `https://auth.notabene.dev/`).
 - **Integrator audience.** Only Notabene's privileged node-tier audience (`https://node.api.notabene.id`,
-  `https://node.api-qa.eu.notabene.dev`; not for integrators) and a test harness using the API base URL appear.
-  Presume the API base URL (e.g. `https://api.notabene.id`); confirm in onboarding material.
+  `https://node.api-qa.eu.notabene.dev`, `https://node.api.notabene.dev` for test; not for integrators) and a test
+  harness using the API base URL appear. The staging config notes a separate plain API audience without naming it.
+  Presume the API base URL (e.g. `https://api.notabene.id`); confirm with Notabene.
 - **Webhook signing secret.** How an institution gets its Svix secret, and the envelope's `version` value, aren't shown.
 - **Unexercised endpoints.** `/tx/receive`, `/tx/updateTR`, `NOT_READY`, `WAITING_FOR_INFORMATION`, and the
   `processBlockchainTransaction` / `haltBlockchainTransaction` events are described from types and comments only.

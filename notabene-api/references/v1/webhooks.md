@@ -9,8 +9,8 @@ open questions (signing secret, `version`).
 
 1. `POST /webhook` with `{ "vaspDID", "url" }` (a fully qualified, dotted hostname).
 2. Verify `svix-id`, `svix-timestamp`, `svix-signature` with a Svix library and your endpoint's signing secret.
-3. On `notification.transactionUpdated`, upsert by `transactionRef` / `id`, act on `payload.transaction.status`
-   ([Send](send.md), [Receive](receive.md)), and return 2xx.
+3. On `notification.transactionUpdated`, upsert by `id` (originators may use their `transactionRef`), act on
+   `payload.transaction.status` ([Send](send.md), [Receive](receive.md)), and return 2xx.
 
 ## Configure
 
@@ -50,6 +50,9 @@ each endpoint with its own signing secret.
 }
 ```
 
+Deliveries to the beneficiary side omit `transactionRef` (the originator's private field). PII may be stripped or
+nameless placeholders; persons sit under `ivms101` (or `pii`), never top-level `originator` / `beneficiary`.
+
 ## Events
 
 `message` is the event type; each carries exactly one transaction.
@@ -65,7 +68,7 @@ each endpoint with its own signing secret.
 - **PII may be stripped.** Re-read `GET /tx/info?id=…` when you need the persons.
 - **At-least-once, unordered.** Key handlers on `id` + `status`; never move your own state backwards when a late,
   older status arrives.
-- **Webhooks can beat your call's response.** Correlate on the `transactionRef` you set on create, so the record exists
-  before the call returns.
+- **Webhooks can beat your call's response.** Originators correlate on the `transactionRef` set on create, so the
+  record exists before the call returns. Beneficiaries never see it (redacted from their webhooks) and key on `id`.
 - **`pending-` hashes are placeholders.** A `transactionBlockchainInfo.txHash` starting with `pending-` is seeded by
   some Notabene components before settlement; it is not an on-chain hash.
