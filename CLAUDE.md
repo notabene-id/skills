@@ -17,7 +17,7 @@ Each skill has a source directory and a packaged `.skill` file:
 
 ### Keep .skill files in sync
 
-Whenever you modify any file inside a skill's source directory (e.g. `notabene-api/references/wallet-service-guide.md` or `notabene-api/SKILL.md`), you **must** rebuild the `.skill` file before finishing:
+Whenever you modify any file inside a skill's source directory (e.g. `notabene-api/references/v2/wallet-service-guide.md` or `notabene-api/SKILL.md`), you **must** rebuild the `.skill` file before finishing:
 
 ```sh
 zip -r <skill-name>.skill <skill-name>/
