@@ -1,0 +1,21 @@
+{
+  "name": "tap-protocol-expert",
+  "version": "1.0.0",
+  "description": "Deep expertise on the Transaction Authorization Protocol (TAP) and its improvement proposals (TAIPs)",
+  "author": {
+    "name": "Notabene",
+    "email": "support@notabene.id",
+    "url": "https://notabene.id"
+  },
+  "homepage": "https://github.com/notabene-id/skills/tree/main/plugins/tap-protocol-expert",
+  "repository": "https://github.com/notabene-id/skills",
+  "license": "MIT",
+  "keywords": [
+    "tap",
+    "taip",
+    "didcomm",
+    "travel-rule",
+    "payments",
+    "protocol"
+  ]
+}

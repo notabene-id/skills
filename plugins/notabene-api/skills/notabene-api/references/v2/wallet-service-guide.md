@@ -1,0 +1,265 @@
+# Wallet Service Integration Guide
+
+For a wallet service / custody provider that acts as an **agent for another institution** (its customer: an exchange,
+VASP or neobank) in v2 Travel Rule transfers. You handle on-chain operations; your customer handles compliance.
+
+Generic mechanics are in the main guide; this file only covers what differs for a wallet service:
+
+- Auth, base URLs, test host: [guide-travel-rule-api.md#authentication](guide-travel-rule-api.md#authentication)
+- Webhook verification, envelope, at-least-once / out-of-order delivery:
+  [guide-travel-rule-api.md#webhooks](guide-travel-rule-api.md#webhooks)
+- Create / authorize / reject / settle / match: [guide-travel-rule-api.md](guide-travel-rule-api.md),
+  [api-reference.md#transfers](api-reference.md#transfers)
+- Identifier formats (`did:pkh`, CAIP-10, CAIP-19, CAIP-220):
+  [guide-travel-rule-api.md#identifier-formats](guide-travel-rule-api.md#identifier-formats)
+
+When your customer adds you as their agent you: provision a wallet for them, determine your side from the agent chain,
+confirm address ownership, settle on-chain when authorized, and report settlement.
+
+## Contents
+
+- [Wrapping Transfers for Your Customers](#wrapping-transfers-for-your-customers)
+- [Webhook Events](#webhook-events)
+- [Determining Your Role](#determining-your-role)
+- [Pre-registering Addresses with `custodian`](#pre-registering-addresses-with-custodian)
+- [Originator Side (You Send)](#originator-side-you-send)
+- [Beneficiary Side (You Receive)](#beneficiary-side-you-receive)
+- [Transfer Fields You Need](#transfer-fields-you-need)
+- [Preventing Double Settlement](#preventing-double-settlement)
+- [Common Pitfalls](#common-pitfalls)
+- [Environment Variables](#environment-variables)
+
+---
+
+## Wrapping Transfers for Your Customers
+
+You can offer Travel Rule compliance as a service by wrapping Notabene's Transfers API inside your wallet transaction
+API, so your customers comply without integrating Notabene directly. When a customer initiates a withdrawal:
+
+1. `POST /entities/{entityDID}/tx` on their behalf, with **your customer as the primary VASP agent** and **yourself as
+   `Custodian` acting `for` your customer**:
+
+```json
+{
+  "ref": "withdrawal-001",
+  "originator": { "@id": "mailto:end-user@example.com" },
+  "beneficiary": { "@id": "mailto:recipient@example.com" },
+  "asset": "eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  "amount": "100.00",
+  "agents": [
+    { "@id": "did:web:your-customer-vasp.com", "role": "VASP", "for": "mailto:end-user@example.com",
+      "policies": [{ "@type": "REQUIRE_AUTHORIZATION" }] },
+    { "@id": "did:web:your-wallet-service.com", "role": "Custodian", "for": "did:web:your-customer-vasp.com" }
+  ]
+}
+```
+
+2. **Wait for authorization.** Your customer's compliance team authorizes or rejects in their Notabene dashboard. You
+   get `notification.transferStatusChanged` with `toStatus: "AUTHORIZED"` once your customer and any counterparty
+   checks pass. Not broadcasting before this is the critical addition to your existing wallet flow.
+3. **Settle on-chain**, then `POST .../tx/{transferId}/settle`.
+
+- **Customer DID:** your customer's entity DID (typically `did:web:customer-domain.com`), obtained at onboarding.
+- **Agent chain:** customer → `for` the customer's end-user; you → `for` your customer. The chain decides who does
+  compliance (customer) and who settles (you).
+- **Deposits:** pre-register your customers' addresses with `custodian` and confirm ownership on their behalf
+  ([below](#beneficiary-side-you-receive)).
+
+---
+
+## Webhook Events
+
+| Event | When | What to do |
+|---|---|---|
+| `notification.transferAgentAdded` | You are added as an agent | Provision wallet, determine role |
+| `notification.transferCreated` | A transfer involving you is created | Same as `transferAgentAdded` (handle whichever arrives first) |
+| `tap.requireRelationshipConfirmationRequested` | Address ownership confirmation needed | Confirm only if the address is your client's |
+| `tap.requireAuthorizationRequested` | Authorization decision needed | Authorize or reject |
+| `notification.transferStatusChanged` → `AUTHORIZED` | All parties authorized | Originator side: settle on-chain |
+| `notification.transferStatusChanged` → `SETTLED` | Settlement complete | Beneficiary side: verify funds received |
+
+Payloads: [webhooks.md](webhooks.md).
+
+---
+
+## Determining Your Role
+
+The transfer's `agents` array (GET response shape) is a chain of `{ "@id", agent: { "@id" }, for }` entries:
+
+```json
+{
+  "agents": [
+    { "@id": "<transfer-agent-uuid>", "agent": { "@id": "did:web:your-service" }, "for": "did:web:client-vasp" },
+    { "@id": "<transfer-agent-uuid>", "agent": { "@id": "did:web:client-vasp" },
+      "for": "mailto:originator@example.com" }
+  ],
+  "originator": { "@id": "mailto:originator@example.com" },
+  "beneficiary": { "@id": "mailto:beneficiary@example.com" }
+}
+```
+
+1. Build a map `agents[i].agent["@id"] → agents[i].for`. The top-level `agents[i]["@id"]` is the TransferAgent's
+   own UUID, not a DID.
+2. Follow it from your own DID: `you → for → for → ...`
+3. Reaching `originator["@id"]` → **originator side** (you send). Reaching `beneficiary["@id"]` → **beneficiary side**
+   (you receive).
+
+```
+you → client VASP → originator   = originator side (you pay)
+you → client VASP → beneficiary  = beneficiary side (you receive)
+```
+
+---
+
+## Pre-registering Addresses with `custodian`
+
+Do this on both sides (recommended), for every address you control for a client:
+
+```
+POST /entities/{entityDID}/relationships
+
+{
+  "from": "did:pkh:eip155:1:0xClientWalletAddress",
+  "to": "did:web:client-vasp-did",
+  "custodian": "did:web:your-wallet-service.com"
+}
+```
+
+- `from`: the address (as `did:pkh`) you control for the client
+- `to`: your customer's entity DID
+- `custodian`: **your own** entity DID
+
+`custodian` is what tells Notabene you manage the address. Without it Notabene identifies the client VASP as owner but
+won't add you as an agent on transfers to that address; you'd have to be added manually each time. Pre-registered
+addresses also satisfy most relationship confirmations automatically.
+
+---
+
+## Originator Side (You Send)
+
+1. **Provision** a wallet for the client agent DID if none exists; fund it (faucet on testnet) or ensure balance.
+2. **Pre-register** addresses ([above](#pre-registering-addresses-with-custodian)).
+3. **Authorize**: `POST /entities/{entityDID}/tx/{transferId}/authorize` with `{}` (the only body fields are the
+   optional `settlementAddress` and `memoTag`, used on the beneficiary side; anything else, such as an asset, is
+   ignored).
+4. **Wait for the transfer-level `AUTHORIZED`** (`notification.transferStatusChanged`), meaning all parties including
+   your client's compliance team approved.
+5. **Settle:** read `settlementAddress` (CAIP-10, e.g. `eip155:1:0xRecipient`), `asset` (CAIP-19, e.g. USDC
+   `eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`) and `amount` from the transfer, execute the on-chain
+   transfer, wait for confirmation. Claim the transfer atomically first ([below](#preventing-double-settlement)).
+6. **Report:** `POST .../tx/{transferId}/settle` with `{ "settlementId": "eip155:1:tx/0xTransactionHash" }`.
+
+---
+
+## Beneficiary Side (You Receive)
+
+1. **Provision** a wallet for the client agent DID.
+2. **Pre-register** receiving addresses with `custodian`.
+3. **Confirm address ownership** on `tap.requireRelationshipConfirmationRequested`:
+   `PATCH /entities/{entityDID}/relationships?from={addressDID}&to={targetDID}` with `{}` (the payload's
+   `confirmCallbackUrl`; its DIDs are unencoded, so URL-encode them). If the address isn't your client's, don't
+   confirm; the transfer is handled elsewhere.
+4. **Authorize**, giving the client's receiving address when the originator does not know it yet:
+   `{ "settlementAddress": "eip155:1:0xClientWalletAddress" }` (CAIP-10 or `payto://` URI; optional `memoTag`).
+   `{}` is also valid.
+5. **Reconcile** each on-chain deposit with `GET .../tx/match` ([guide](guide-travel-rule-api.md#4-reconcile-received-transfers)).
+   If nothing matches, create the transfer with **yourself as the `VASP` agent `for` the client VASP** and the client
+   as beneficiary:
+
+```json
+{
+  "ref": "your-unique-deposit-reference",
+  "originator": { "@id": "did:pkh:eip155:1:0xSenderAddress" },
+  "beneficiary": { "@id": "did:web:client-vasp-did" },
+  "asset": "eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  "amount": "100.00",
+  "agents": [{ "@id": "did:web:your-service.example.com", "role": "VASP", "for": "did:web:client-vasp-did",
+               "policies": [{ "@type": "REQUIRE_AUTHORIZATION" }] }],
+  "settlementId": "eip155:1:tx/0xTransactionHash"
+}
+```
+
+6. **Verify** on `toStatus: "SETTLED"` that the funds arrived on-chain (optional, recommended).
+
+---
+
+## Transfer Fields You Need
+
+From `GET /entities/{entityDID}/tx/{transferId}`:
+
+```json
+{
+  "transfer": {
+    "@id": "transfer-uuid",
+    "status": "AUTHORIZED",
+    "asset": "eip155:1/erc20:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "amount": "100.00",
+    "settlementAddress": "eip155:1:0xRecipient",
+    "settlementId": null,
+    "agents": [{ "@id": "<transfer-agent-uuid>", "agent": { "@id": "did:web:..." }, "for": "did:web:...",
+                 "role": "Custodian", "status": "AUTHORIZED" }],
+    "originator": { "@id": "mailto:..." },
+    "beneficiary": { "@id": "mailto:..." }
+  }
+}
+```
+
+- `amount`: decimal string in whole token units (`"100.00"` = 100 USDC); convert to base units with the token's
+  decimals when building the on-chain transaction
+- `asset`: CAIP-19; `settlementAddress`: CAIP-10 destination, set once the beneficiary side provides it; `memoTag`:
+  destination tag where the chain needs one
+- `agents`: the chain for role determination (use `agent["@id"]` and `for`)
+- Full schema: [api-reference.md#transfer](api-reference.md#transfer)
+
+---
+
+## Preventing Double Settlement
+
+Duplicate `AUTHORIZED` deliveries, or `AUTHORIZED` arriving while a retry of an earlier event runs, can trigger
+settlement concurrently. Use an **atomic claim** so exactly one handler broadcasts:
+
+1. Keep a `status` on your transfer record.
+2. Before settling, atomically transition `authorized` → `settling` (e.g. a conditional update).
+3. If the transition fails (already `settling` / `settled`), skip.
+4. Only the handler that won the claim executes the on-chain transfer.
+
+```
+function claimForSettlement(transferId):
+  transfer = db.get(transferId)
+  if transfer.status != "authorized": return false
+  db.update(transferId, { status: "settling" })  // atomic
+  return true
+```
+
+---
+
+## Common Pitfalls
+
+1. **Putting the wrong fields in the authorize body.** It accepts only the optional `settlementAddress` and `memoTag`
+   ([api-reference](api-reference.md#post-entitiesentitydidtxtransferidauthorize)); `{}` is valid. Other fields
+   (asset, amount) are ignored, so they do not change the transfer.
+2. **Settling on a per-agent signal.** `notification.transferAgentStatusChanged` fires when one agent authorizes; it is
+   not enough. Wait for `notification.transferStatusChanged` → `AUTHORIZED`.
+3. **Non-idempotent handlers.** Duplicate deliveries cause duplicate records, duplicate on-chain transfers or nonce
+   collisions.
+4. **Assuming event order.** `AUTHORIZED`, `transferAgentAdded` and `transferCreated` can arrive in any order; check
+   current state and act accordingly.
+5. **Not pre-registering addresses.** Every incoming transfer then needs manual relationship confirmation.
+6. **Omitting `custodian`** when registering addresses: you won't be added automatically to incoming transfers.
+
+---
+
+## Environment Variables
+
+```
+NB_CLIENT_ID=<from notabene dashboard>
+NB_CLIENT_SECRET=<from notabene dashboard>
+NB_ENTITY_DID=did:web:your-service.example.com
+NB_API_URL=https://api.eu1.notabene.id        # or https://api.us1.notabene.id
+NOTABENE_OAUTH_TOKEN_URL=https://auth.notabene.id/oauth/token  # US: https://us.auth.notabene.id/oauth/token
+NB_OAUTH_AUDIENCE=https://api.eu1.notabene.id  # same host as NB_API_URL
+```
+
+Use your region's host and token URL (EU `api.eu1.notabene.id` with `auth.notabene.id`, US `api.us1.notabene.id` with
+`us.auth.notabene.id`). v2 has no separate test host: sandbox entities use the same base URL
+([guide-travel-rule-api.md#authentication](guide-travel-rule-api.md#authentication)). `api.notabene.dev` is v1 only.

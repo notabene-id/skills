@@ -1,0 +1,21 @@
+{
+  "name": "notabene-api",
+  "version": "1.1.0",
+  "description": "Notabene Transact (Travel Rule) integration guide for API v1, v2 and v2.1, plus the Notabene JavaScript SDK",
+  "author": {
+    "name": "Notabene",
+    "email": "support@notabene.id",
+    "url": "https://notabene.id"
+  },
+  "homepage": "https://github.com/notabene-id/skills/tree/main/plugins/notabene-api",
+  "repository": "https://github.com/notabene-id/skills",
+  "license": "MIT",
+  "keywords": [
+    "notabene",
+    "travel-rule",
+    "ivms101",
+    "compliance",
+    "crypto",
+    "webhooks"
+  ]
+}
