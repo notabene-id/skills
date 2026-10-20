@@ -3,7 +3,7 @@
 Where Notabene v2.1 hooks into an institution's own code: a pre-authorization step in the withdrawal flow, customer
 and address registration when customers onboard and deposit addresses are issued, a one-off backfill of existing ones,
 and a check in the deposit crediting path. Find each place in the codebase before writing code. Endpoints, bodies,
-events and statuses are in [Send a transfer](transact-send.md), [Receive a transfer](transact-receive.md),
+events and statuses are in [Withdrawals](transact-send.md), [Deposits](transact-receive.md),
 [Customers](customers.md), [Wallet addresses](wallets.md) and [Webhooks](webhooks.md); the API reference
 (`/api/openapi.json`) is authoritative for field names. Pseudocode below is language-neutral.
 
@@ -51,7 +51,7 @@ requested → validated → pending_travel_rule → ready_to_broadcast → broad
 ```
 
 1. **Optionally assess** with `POST /api/v1/transfers/assess` while the customer confirms, to learn which fields the
-   form must collect ([Send § Assess](transact-send.md#1-assess-optional-recommended)).
+   form must collect ([Withdrawals § Collect transfer details](transact-send.md#1-collect-transfer-details-from-your-customer)).
 2. **Before the call**, persist a UUID `ref` on the withdrawal. Creation is idempotent on `ref`: replaying the
    identical body returns the existing transfer; the same `ref` with a different body answers `409`.
 3. **Create** with `POST /api/v1/transfers`: `ref`, `asset`, whole-unit decimal `amount`, `settlement_address`,
@@ -136,8 +136,8 @@ conflicts to the user. Keep step 3's hooks live so new records never need anothe
 
 ## 5. Deposits: tie in when funds arrive
 
-**Announced before settlement (the common case).** The Travel Rule data arrives before the funds
-([Receive § Announced](transact-receive.md#announced-before-settlement)):
+**With a Travel Rule message (the common case).** The Travel Rule data arrives before the funds
+([Deposits § With a Travel Rule message](transact-receive.md#with-a-travel-rule-message)):
 
 1. `transfer.created.v3` with `direction: "Incoming"`: read `GET /api/v1/transfers/{id}`; record the transfer id
    against the expected deposit (settlement address, asset, amount).
@@ -167,9 +167,9 @@ decide(d, transfer):
 
 - `match` returns `data[]`, `all_filters_applied` and `dropped_filters`. When `all_filters_applied` is `false`, the
   rows are candidates that failed part of the query: don't auto-link them.
-- The unmatched create is "seen on-chain first": your DID from `GET /api/v1/identity` as `beneficiary_entity_did`;
+- The unmatched create is "without a Travel Rule message": your DID from `GET /api/v1/identity` as `beneficiary_entity_did`;
   the sender is discovered from `source_address`
-  ([Receive § Seen on-chain first](transact-receive.md#seen-on-chain-first)).
+  ([Deposits § Without a Travel Rule message](transact-receive.md#without-a-travel-rule-message)).
   It starts as `SettledIncompleteAuthorization` and is finished only at `Settled`.
 - Calling `match` before creating is this guide's recommendation to avoid a second record for an announced
   transfer; the receive guide itself goes straight to create.

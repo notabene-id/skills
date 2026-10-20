@@ -4,6 +4,18 @@ A crypto address does not say who holds it. Registering the deposit addresses yo
 they are yours, so institutions sending to them can find you, and the question "is this address yours?" is answered
 without you.
 
+## Contents
+
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Why it matters](#why-it-matters)
+- [Decisions](#decisions)
+- [Register an address](#register-an-address)
+- [When someone asks whether an address is yours](#when-someone-asks-whether-an-address-is-yours)
+- [Your customer's own wallet](#your-customers-own-wallet)
+- [Who holds an address?](#who-holds-an-address)
+- [With a wallet provider](#with-a-wallet-provider)
+
 ## Quick start
 
 Tell Notabene about each deposit address when you create it, and which customer it belongs to.
@@ -11,6 +23,11 @@ Tell Notabene about each deposit address when you create it, and which customer 
 1. When you issue a deposit address, `POST /api/v1/wallets` with the address in CAIP-10 form and the customer's id.
 2. For a shared (omnibus) address, leave the customer out.
 3. When you retire an address, `DELETE /api/v1/wallets/{address}`.
+
+## How it works
+
+Register an address as you issue it; from then on senders find you from it, and the question whether it is yours
+never reaches you.
 
 ## Why it matters
 
