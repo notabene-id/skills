@@ -1,11 +1,11 @@
 # Pre-production checklist
 
-What only your code can show, checked before real traffic. Go Live tracks what your account shows; these checks
+What only your code can show, checked before real traffic. Getting Started tracks what your account shows; these checks
 cover what it cannot: how your code retries, handles money and reads events.
 
 ## Quick start
 
-Work through the four groups below once **Integration → Go Live** shows every step done. Walk the integration's code
+Work through the four groups below once **Integration → Getting Started** shows every step done. Walk the integration's code
 against each check: point to the code that satisfies it, or say what is missing and propose the change. Report every
 check as done, missing or not applicable to the integration type.
 
@@ -24,15 +24,15 @@ check as done, missing or not applicable to the integration type.
 | Every transfer create sends a `ref` you stored first; a retry replays the identical body. | A timeout can hide a transfer that was created. The same `ref` returns it instead of a second one. | [Create the transfer](transact-send.md#2-create-the-transfer) |
 | A retried customer registration treats `409` as already done. | Customers are keyed by your `id`; the retry finds the one the first call made. | [Register a customer](customers.md#register-a-customer) |
 | Amounts are whole-unit decimal strings built from your ledger's decimal type, never floats. | A float rounds; `"0.1"` ETH must mean exactly that. | [Conventions](authentication.md#conventions) |
-| A `409` on authorize re-reads the transfer and retries once. | The transfer changed while you decided, so decide on what it is now. | [Announced before settlement](transact-receive.md#announced-before-settlement) |
+| A `409` on authorize re-reads the transfer and retries once. | The transfer changed while you decided, so decide on what it is now. | [Announced before settlement](transact-receive.md#with-a-travel-rule-message) |
 
 ## Settlement
 
 | Check | Why it matters | Guide |
 |---|---|---|
 | Withdrawals broadcast only after `ReadyToSettle`, then call settle with the transaction hash. | A broadcast cannot be recalled; every institution must have authorized first. | [Broadcast, then settle](transact-send.md#5-broadcast-then-settle) |
-| Deposits credit your customer on `Settled`, and `SettledIncompleteAuthorization` stays unfinished. | Funds that arrived before the checks cleared still need your decision. | [Seen on-chain first](transact-receive.md#seen-on-chain-first) |
-| Your withdrawal form asks for the fields assess reports as `required`, and no more. | Collecting less stalls the transfer; collecting more is data you then have to hold. | [Assess](transact-send.md#1-assess-optional-recommended) |
+| Deposits credit your customer on `Settled`, and `SettledIncompleteAuthorization` stays unfinished. | Funds that arrived before the checks cleared still need your decision. | [Seen on-chain first](transact-receive.md#without-a-travel-rule-message) |
+| Your withdrawal form asks for the fields assess reports as `required`, and no more. | Collecting less stalls the transfer; collecting more is data you then have to hold. | [Collect transfer details](transact-send.md#1-collect-transfer-details-from-your-customer) |
 | Every deposit address is registered with `POST /api/v1/wallets` as it is issued, in CAIP-10 form. | Senders find you from the address, and ownership checks answer themselves. | [Register an address](wallets.md#register-an-address) |
 
 ## Webhooks

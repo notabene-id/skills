@@ -4,7 +4,7 @@ Route for integrations on `https://sandbox.notabene.id` (sandbox) or `https://eu
 `https://us-a.notabene.id` (production, EU and US), with paths under `/api/v1/…`.
 
 Read [`authentication.md`](authentication.md) first (environments, API credential, token, conventions, errors), then
-[`overview.md`](overview.md) (the model in payment terms, objects, lifecycle), then the guides the path needs. The API
+[`overview.md`](overview.md) (Getting Started: integration type, the steps and the model in payment terms, objects, DID document), then the guides the path needs. The API
 reference, served at `/api/openapi.json` on sandbox (`https://sandbox.notabene.id/api/openapi.json`) and in the
 dashboard under **Integration → API Reference**, is authoritative for field names, enums and permissions.
 
@@ -12,8 +12,8 @@ dashboard under **Integration → API Reference**, is authoritative for field na
 see): direction (withdrawals, deposits or both); who holds the wallets (a wallet provider connected in the dashboard →
 wallet-managed, otherwise self-managed); whether the front end runs live checks (→ embedded).
 [`go-live.md`](go-live.md#what-each-answer-means) ("What each answer means") holds the decision table and the minimal
-call/event set per direction. If the user has already saved an integration type in the dashboard (**Integration → Go
-Live**), reconcile with it: build for the saved type, or tell the user why it should change.
+call/event set per direction. If the user has already saved an integration type in the dashboard (**Integration → Getting
+Started**), reconcile with it: build for the saved type, or tell the user why it should change.
 
 **2. Build the path**, against sandbox, in the order [`go-live.md`](go-live.md) lists the steps:
 
@@ -23,14 +23,14 @@ Live**), reconcile with it: build for the saved type, or tell the user why it sh
 | Where to hook it into the codebase | [`integration-points.md`](integration-points.md) — the pre-broadcast withdrawal hook, registering addresses as wallets are created, backfilling existing addresses, the deposit path |
 | Customers (every path) | [`customers.md`](customers.md) — register once, ids on transfers, IVMS-101 minimums |
 | Deposit addresses (every path that receives) | [`wallets.md`](wallets.md) — CAIP-10 registration, confirmation requests, self-hosted wallet proofs |
-| Withdrawals | [`transact-send.md`](transact-send.md) — assess, create, requirements, `ReadyToSettle`, settle |
-| Deposits | [`transact-receive.md`](transact-receive.md) — announced before settlement, or seen on-chain first |
+| Withdrawals | [`transact-send.md`](transact-send.md) — collect the details (Withdrawal Assist, or assess for a server-only form), create, requirements, `ReadyToSettle`, settle |
+| Deposits | [`transact-receive.md`](transact-receive.md) — with a Travel Rule message, or without one |
 | Embedded front end | [`transact-embedded.md`](transact-embedded.md) — customer tokens and the customer routes |
 
 Done when a sandbox transfer reaches `Settled`.
 
 **3. Production.** Walk [`pre-production.md`](pre-production.md) against the code and report each check as done,
-missing or not applicable. [`go-live.md`](go-live.md) is the setup checklist; the dashboard's **Integration → Go Live**
+missing or not applicable. [`go-live.md`](go-live.md) is the setup checklist; the dashboard's **Integration → Getting Started**
 tracks the same steps per environment and stores the saved integration type, so every step is done again in
 production.
 

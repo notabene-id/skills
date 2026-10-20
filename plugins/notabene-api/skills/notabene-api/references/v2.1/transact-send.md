@@ -1,17 +1,18 @@
-# Send a transfer
+# Withdrawals
 
-Your customer is withdrawing crypto to an address outside your institution. Notabene Transact works out whether the
-Travel Rule applies, finds the beneficiary's institution, exchanges the required data with it, and tells you when it is
-safe to broadcast. Your code supplies the transfer and reacts to two events.
+Your customer is withdrawing crypto to an address outside your institution. Notabene's Withdrawal Assist component
+collects the beneficiary's details from them in your app, Notabene Transact works out whether the Travel Rule
+applies, finds the beneficiary's institution, exchanges the required data with it, and tells you when it is safe to
+broadcast. Your code mints a customer token, posts the transfer and reacts to two events.
 
 ## Contents
 
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
-- [1. Assess (optional, recommended)](#1-assess-optional-recommended)
+- [1. Collect transfer details from your customer](#1-collect-transfer-details-from-your-customer)
 - [2. Create the transfer](#2-create-the-transfer)
 - [3. Answer requirements](#3-answer-requirements)
-- [4. Wait for ReadyToSettle](#4-wait-for-readytosettle)
+- [4. Wait for `ReadyToSettle`](#4-wait-for-readytosettle)
 - [5. Broadcast, then settle](#5-broadcast-then-settle)
 - [When things change](#when-things-change)
 
@@ -19,46 +20,88 @@ safe to broadcast. Your code supplies the transfer and reacts to two events.
 
 Before you send a customer's crypto out, tell Notabene, and wait for its go-ahead.
 
-1. `POST /api/v1/transfers` with the amount, destination address and both customers.
-2. Wait for the `transfer.status_changed.v3` webhook with `toStatus: "ReadyToSettle"`.
-3. Broadcast on-chain as you do today.
-4. `POST /api/v1/transfers/{id}/settle` with the transaction hash.
+1. Mount Withdrawal Assist in your withdrawal form, with a customer token your backend mints; it completes with the
+   `transfer` to post.
+2. `POST /api/v1/transfers` with that `transfer`, your stored `ref` and your customer's id.
+3. Wait for the `transfer.status_changed.v3` webhook with `toStatus: "ReadyToSettle"`.
+4. Broadcast on-chain as you do today.
+5. `POST /api/v1/transfers/{id}/settle` with the transaction hash.
 
-Most transfers need nothing else. The steps below add the optional pre-check and the cases that need you.
+Most transfers need nothing else. The steps below add the cases that need you.
 
 ## How it works
 
-Each step between the two institutions lines up with one call your code makes or one event it handles.
+Each step between the two institutions lines up with one call your code makes, one event it handles, or a
+decision your authorization rules make for you.
 
-```text
-Your customer (originator) → your institution (sending) → counterparty institution (receiving) → their customer (beneficiary)
-```
+## 1. Collect transfer details from your customer
 
-| | What happens | Your code |
-|---|---|---|
-| 1 | Your customer confirms the withdrawal in your app. | `POST /api/v1/transfers/assess` (optional) |
-| 2 | You create the transfer; Notabene finds the institution behind the destination address. | `POST /api/v1/transfers` → `Active` |
-| 3 | Travel Rule data is exchanged; anything that waits on you is raised. | `requirements.pending.v3` → resolve |
-| 4 | Both institutions authorize. | `transfer.status_changed.v3` → `ReadyToSettle` |
-| 5 | You broadcast, then record the transaction hash. | `POST /api/v1/transfers/{id}/settle` |
+The Travel Rule data comes from your customer: who they are paying, which institution or self-hosted wallet holds
+the destination, and proof that they own that wallet. Withdrawal Assist, from Notabene's JavaScript SDK, collects
+all of it in your withdrawal form, in your customer's language, and hands your backend the transfer to post.
+[Embedded components](transact-embedded.md) covers every option; this is the shortest path.
 
-## 1. Assess (optional, recommended)
-
-Before you show the withdrawal confirmation, ask what the transfer will need. Assess creates nothing.
+**Backend: mint a customer token.** The customer is registered ([Customers](customers.md)); mint for the one who
+is signed in, never for an id the browser sends. The token is read-only and bound to that customer: it lets the
+component work for them and nothing else.
 
 ```bash
-curl -s https://sandbox.notabene.id/api/v1/transfers/assess \
+curl -s https://sandbox.notabene.id/api/v1/entities/$YOUR_DID/delegate-token \
   -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-  -d '{"asset":"USDC","amount":"250.00","destinationAddress":"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984"}'
+  -d '{"customer_ref":"urn:uuid:0c8f6a52-6e83-4f2b-9d0a-7b1f0e7c2a41"}'
 ```
 
-- `travelRule` is `Applies`, `Exempt` or `Undetermined`.
-- `required` lists the personal-data fields to collect from your customer when it applies.
-- `beneficiaryVasp` names the receiving institution when it can be discovered from the address.
+`$YOUR_DID` is your institution's DID (from `GET /api/v1/identity`). The response carries `access_token`,
+`expires_in` (about an hour) and `jti`. Put the call behind an endpoint only your signed-in customer can reach.
 
-Use `required` to decide which fields your withdrawal form asks for. Collect nothing more.
+**Front end: mount the component.** Install `@notabene/javascript-sdk` (2.24 or later), create the v2.1
+`Notabene` with a `fetchToken` that asks that endpoint, and mount Withdrawal Assist where the destination and
+amount are entered. `nodeUrl` is the base URL your backend calls.
+
+```js
+import { Notabene } from '@notabene/javascript-sdk/src/v21';
+
+const notabene = new Notabene({
+  nodeUrl: 'https://sandbox.notabene.id',
+  locale: 'en',
+  fetchToken: async () => {
+    const res = await fetch('/api/notabene/customer-token', { method: 'POST' });
+    const { access_token } = await res.json();
+    return access_token;
+  },
+});
+
+const withdrawal = notabene.createWithdrawalAssist({
+  asset: 'USDC',
+  amountDecimal: 250,
+  destination: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984',
+});
+withdrawal.mount('#nb-withdrawal');
+withdrawal.update({ amountDecimal: 300 }); // as the customer edits the form
+
+const { transfer } = await withdrawal.completion();
+await fetch('/api/withdrawals', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ transfer }),
+});
+```
+
+Every field is optional: the component asks the customer for whatever you leave out. It finds the institution
+behind the destination, asks for the beneficiary's name and whatever else the jurisdictions involved require, and
+collects an ownership proof when the destination is the customer's own wallet. Give it
+`counterpartyAssist: { counterpartyTypes: ['natural', 'legal', 'self'] }` and a `fetchCounterpartyAssistToken`
+to let your customer share a link so the beneficiary enters their own details
+([Counterparty Assist](transact-embedded.md#counterparty-assist-optional)).
+
+**Server-only instead?** If no web front end exists, `POST /api/v1/transfers/assess` with the asset, amount and
+`destinationAddress` tells you whether the Travel Rule applies and which personal-data fields are `required`, so
+your own form collects those and nothing more.
 
 ## 2. Create the transfer
+
+`transfer` is the `POST /api/v1/transfers` body the component filled in. Add `ref`, your customer's id as
+`originator_id`, and post it with your own credential:
 
 ```bash
 curl -s https://sandbox.notabene.id/api/v1/transfers \
@@ -78,21 +121,26 @@ curl -s https://sandbox.notabene.id/api/v1/transfers \
 The response is `{"transferId": "…", "status": "Active"}`. Store `transferId` on your withdrawal record.
 
 - **`ref`** is your idempotency key. Generate and persist it before the call; on a timeout, replay the identical body.
-- **The receiving institution** is discovered from `settlement_address`. Set `beneficiary_entity_did` when you already
-  know it.
+- **The receiving institution** is discovered from `settlement_address`. The component sets
+  `beneficiary_entity_did` when it found it; set it yourself when you already know it.
 - **Customers.** Name each customer by id; an inline profile goes alongside its id, never instead of it (an inline
   `originator` or `beneficiary` without its `*_id` is rejected). Your customer is registered once
   ([Customers](customers.md)), so `originator_id` is enough. The beneficiary is the counterparty's customer: give
-  them an id of your own as `beneficiary_id` and the details you know inline as `beneficiary`.
-- **Self-hosted destination** (the customer's own wallet): attach `beneficiary_proof_of_ownership`, such as an
-  `eip-191` signature; inline proofs need a DID as `beneficiary_id`. See [Wallet addresses](wallets.md).
+  them an id of your own as `beneficiary_id` and the details the component collected inline as `beneficiary`.
+- **Self-hosted destination** (the customer's own wallet): the component's `beneficiary_proof_of_ownership`, such as
+  an `eip-191` signature, goes with the body; inline proofs need a DID as `beneficiary_id`. See
+  [Wallet addresses](wallets.md).
 - **Your own valuation.** If you price the asset yourself, pass `fiat_amount_usd`; it decides the threshold.
+- **Your own encryption.** To keep the personal data from Notabene, send it sealed to the receiving institution's
+  key as `ivms_encrypted` instead of `ivms` ([Customers](customers.md#where-the-personal-data-is-held)).
 
 ## 3. Answer requirements
 
-A `requirements.pending.v3` webhook lists what is outstanding. Act on each item whose `agentId` is your DID. Each item's
-`type` is PascalCase (`BeneficiaryNameMatch`), while the resolve path takes the kebab-case name
-(`beneficiary-name-match`); its `id` is the `evaluationId` that skip takes.
+A `requirements.pending.v3` webhook lists what is outstanding. Your authorization rules, under
+**Authorization Rules → Policies**, resolve most of it: screening, limits, whether the counterparty is trusted.
+Your code acts only on items routed to it, those whose `agentId` is your DID. Each item's `type` is PascalCase
+(`BeneficiaryNameMatch`), while the resolve path takes the kebab-case name (`beneficiary-name-match`); its `id` is the
+`evaluationId` that skip takes:
 
 | Requirement | Do this |
 |---|---|
@@ -100,13 +148,14 @@ A `requirements.pending.v3` webhook lists what is outstanding. Act on each item 
 | `beneficiary-name-match`, `internal-compliance-check`, `wallet-address-confirmation` | `POST /api/v1/transfers/{id}/requirements/{requirement}/resolve` with an `outcome` |
 | One of yours that does not apply | `POST /api/v1/transfers/{id}/requirements/{evaluationId}/skip` |
 
-Most transfers need nothing here: your policies decide automatically, and Notabene sends your data when it is due.
+Most transfers need nothing here: your rules decide, and Notabene sends your data when it is due.
 
 ## 4. Wait for `ReadyToSettle`
 
 `transfer.status_changed.v3` with `toStatus: "ReadyToSettle"` means every institution on the transfer has authorized.
-**Broadcast only after this event.** Your own authorization is sent for you when your policies clear; call
-`POST /api/v1/transfers/{id}/authorize` only to authorize by hand.
+**Broadcast only after this event.** Your own authorization is not an API call: your authorization rules give it
+when they clear, and a transfer they flag waits for your compliance team in the dashboard. Call
+`POST /api/v1/transfers/{id}/authorize` only for a decision your rules leave to your own system.
 
 `Rejected` or `Canceled` means do not broadcast: return the funds to the customer's balance and show the reason.
 

@@ -73,6 +73,9 @@ When reviewing or editing a skill, verify:
   - `transact-send.md`: requirement `type` is PascalCase while the resolve path takes kebab-case.
   - `customers.md`: the customer id is always required on a transfer, an inline profile only alongside it (the
     node's OpenAPI says otherwise; its code agrees with the guide).
+- `go-live.md` and `pre-production.md` in `references/v2.1/` are skill-local: the node folded them into its `overview.md`
+  (Getting Started, "Before real traffic"), but they keep the integration-type decision table and the fuller checklist.
+  Also drop the `## With a coding agent` sections when re-syncing, and refresh the anchors they link to.
 - Each version folder has an `integration-points.md`: where to hook Notabene into an integrator's codebase (the
   pre-broadcast withdrawal hook, registering addresses as wallets are created, backfilling existing addresses, the
   deposit path). Keep it in step with that version's send/receive guides and its safe-to-send signal.
